@@ -4,7 +4,7 @@ from openai import OpenAI
 # Replace 'your_user_id#your_api_key' with your actual user_id and API key for the service.
 client = OpenAI(base_url="https://llm-gateway.heurist.xyz", api_key="your_user_id#your_api_key")
 
-model_id = "mistralai/mixtral-8x7b-instruct-v0.1"
+model_id = "mistralai/mixtral-8x7b-instruct"
 
 # Pre-defined messages to set the context for the AI model.
 msgs = [
