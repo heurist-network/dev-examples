@@ -1,11 +1,13 @@
-# API Usage Examples
+# Heurist Integration Examples
 
 ## Image Generation
 
-[Developer Docs](https://docs.heurist.ai/developer/image-generation-api)
+- Option 1: [Use REST API](https://docs.heurist.ai/dev-guide/api-reference/image-generation/introduction)
+- Option 2: [Use Node.js SDK](https://docs.heurist.ai/dev-guide/api-reference/heurist-sdk/basic-image-generation)
 
 ## LLM
-[Developer Docs](https://docs.heurist.ai/developer/heurist-llm-gateway)
+[LLM Gateway Docs](https://docs.heurist.ai/dev-guide/api-reference/llm-gateway/introduction)
 
+### Example Code
 - `llm-gateway-openai-sdk.py` is an example of using Python `openai` SDK to generate texts. Both stream and non-stream modes are supported.
 - `tool-calling.py` is an example using a fine-tuned Llama-3.1 model that supports tool calling.
