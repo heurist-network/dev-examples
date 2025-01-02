@@ -11,7 +11,7 @@ input = ["hello", "world"]
 
 # Call the embeddings API to generate embeddings
 embeddings = client.embeddings.create(
-  model="BAAI/bge-large-en-v1.5",  # Specify the model
+  model="YOUR_MODEL_ID",  # Specify the model
   input=input,                     # Provide the input text
   encoding_format="float"          # Specify the encoding format
 )

@@ -1,4 +1,3 @@
-require('dotenv').config(); 
 const { OpenAI } = require('openai'); 
 
 const client = new OpenAI({
@@ -6,7 +5,7 @@ const client = new OpenAI({
   baseURL: 'https://llm-gateway.heurist.xyz',
 });
 
-const modelId = 'mistralai/mixtral-8x7b-instruct';
+const modelId = 'YOUR_MODEL_ID';
 
 // Pre-defined messages to set the context for the AI model
 const msgs = [
@@ -17,7 +16,7 @@ const msgs = [
 // Streaming function: receives a real-time response from the AI model
 async function testOpenAIAPIStream(messages, temperature = 0.75, maxTokens = 500) {
   try {
-    const stream = client.chat.completions.create({
+    const stream = await client.chat.completions.create({
       model: modelId,
       messages: messages,
       stream: true,
@@ -27,8 +26,12 @@ async function testOpenAIAPIStream(messages, temperature = 0.75, maxTokens = 500
 
     console.log('Response from OpenAI Streaming API:');
     for await (const chunk of stream) {
-      process.stdout.write(chunk.choices[0].delta.content);
+      if (chunk.choices && chunk.choices[0].delta && chunk.choices[0].delta.content) {
+        process.stdout.write(chunk.choices[0].delta.content);
+      }
     }
+    console.log('\nStreaming ended.');
+
   } catch (error) {
     console.error('An error occurred during the streaming API call:', error);
   }

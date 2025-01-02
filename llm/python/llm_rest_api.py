@@ -1,56 +1,43 @@
+import uuid
 import requests
-from dotenv import load_dotenv
-from openai import OpenAI
 
-import os
-
-
+# Main function to interact with the API
 def main():
-    model = 'meta-llama/llama-3.3-70b-instruct'
-    url = "https://llm-gateway.heurist.xyz/v1/chat/completions"
-    load_dotenv()
-    api_key = os.getenv("HEURIST_API_KEY")
+    api_key = "your_user_id#your_api_key"  # Replace with a secure method to load the API key
+    base_url = "https://llm-gateway.heurist.xyz/chat/completions"
+
+    # Define the payload for the chat completions API
     payload = {
-        "model": model,
+        "model": "YOUR_MODEL_ID", # Replace with desired model
         "messages": [
-            {
-                "role": "user",
-                "content": "hello"
-            }
-        ]
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Describe a beautiful landscape with mountains and a river, avoiding any signs of human presence."}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 150
     }
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
 
-    print('Sending request to LLM API...')
-    response = requests.request("POST", url, json=payload, headers=headers)
-    
-    print('Response status code:', response.status_code)
-    response_json = response.json()
-    
-    print('LLM Response:', response_json['choices'][0]['message']['content'])
-    
-    if response.status_code != 200:
-        print('Error:', response_json.get('error', 'Unknown error occurred'))
+    try:
+        # Submit the request using an HTTP POST
+        response = requests.post(base_url, json=payload, headers=headers)
 
-def use_openai_sdk():
-    api_key = os.getenv("HEURIST_API_KEY")
-    client = OpenAI(base_url='https://llm-gateway.heurist.xyz', api_key=api_key)
-    model = 'meta-llama/llama-3.3-70b-instruct'
-    print('Sending request to LLM API...')
-    result = client.chat.completions.create(
-        model=model,
-        messages=[{
-            "role": "user",
-            "content": "hello"
-        }],
-        stream=False,
-        temperature=0.5,
-    )
-    print('result: ', result.choices[0].message.content)
+        # Handle the response and print the relevant output
+        print(f"Response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            print('Request submitted successfully')
+            response_data = response.json()
+            print(f"Response data: {response_data}")
+        else:
+            print(f"Error submitting request: {response.text}")
 
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    use_openai_sdk()
+    main()
