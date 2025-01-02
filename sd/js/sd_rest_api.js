@@ -35,8 +35,8 @@ function generateJobId() {
 
 async function main() {
     const url = 'http://sequencer.heurist.xyz/submit_job';  
-    const apiKey = 'your_user_id#your_api_key';  
-    const modelId = 'YOUR_MODEL_ID';  
+    const apiKey = 'your_user_id#your_api_key';   // For API key, visit: https://dev-api-form.heurist.ai/
+    const modelId = 'HEURIST_MODEL_ID';  // For the supported model list, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
 
     const payload = {
         job_id: generateJobId(),

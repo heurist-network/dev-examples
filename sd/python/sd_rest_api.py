@@ -22,7 +22,7 @@ def main():
     """
     url = "http://sequencer.heurist.xyz/submit_job"
     api_key = "your_user_id#your_api_key"  # For API key, visit: https://dev-api-form.heurist.ai/
-    model_id = 'YOUR_MODEL_ID'  # For supported model list, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
+    model_id = 'HEURIST_MODEL_ID'  # For supported model list, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
     payload = {
         "job_id": generate_job_id(),
         "model_input": {
