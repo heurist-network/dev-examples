@@ -1,10 +1,10 @@
 from openai import OpenAI
 
-# Initialize the OpenAI client with the base URL and API key for the custom LLM gateway.
-# Replace 'your_user_id#your_api_key' with your actual user_id and API key for the service.
+# for API key visit = https://dev-api-form.heurist.ai/
 client = OpenAI(base_url="https://llm-gateway.heurist.xyz", api_key="your_user_id#your_api_key")
 
-model_id = "mistralai/mixtral-8x7b-instruct"
+model_id = "HEURIST_MODEL_ID" # support model list = https://github.com/heurist-network/heurist-models/blob/main/models.json
+        
 
 # Pre-defined messages to set the context for the AI model.
 msgs = [
@@ -64,8 +64,6 @@ def test_openai_api(messages, temperature=0.75, max_tokens=500):
         print(f"An error occurred during the non-streaming API call: {e}")
 
 if __name__ == "__main__":
-    # Example usage of the streaming and non-streaming functions with customizable temperature and max_tokens.
     test_openai_api_stream(msgs, temperature=0.5, max_tokens=200)
-    
     # Uncomment the line below to test the non-streaming API with different temperature and max_tokens values.
     # test_openai_api(msgs, temperature=1.0, max_tokens=500)
