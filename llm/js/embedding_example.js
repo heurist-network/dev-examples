@@ -1,4 +1,3 @@
-require('dotenv').config(); 
 const { OpenAI } = require('openai');  
 
 const client = new OpenAI({
@@ -11,7 +10,7 @@ const input = ['hello', 'world'];
 async function generateEmbeddings() {
   try {
     const embeddings = await client.embeddings.create({
-      model: 'BAAI/bge-large-en-v1.5',  // Specify the model
+      model: 'YOUR_MODEL_ID',           // Specify the model
       input: input,                     // Provide the input text
       encoding_format: 'float',         // Specify the encoding format
     });

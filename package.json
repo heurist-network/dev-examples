@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "heurist": "^0.0.38",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.77.0",
+    "uuid": "^11.0.3"
+  }
+}

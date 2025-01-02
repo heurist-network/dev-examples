@@ -1,7 +1,7 @@
 import Heurist from 'heurist'
 
 const heurist = new Heurist({
-  apiKey: "your_user_id#your_api_key",
+  apiKey: process.env['HEURIST_API_KEY'],
 })
 
 async function main() {

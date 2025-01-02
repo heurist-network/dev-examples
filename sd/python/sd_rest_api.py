@@ -8,7 +8,7 @@ def generate_job_id():
 def main():
     url = "http://sequencer.heurist.xyz/submit_job"
     api_key = "your_user_id#your_api_key"
-    model_id = 'HeuristLogo'
+    model_id = 'YOUR_MODEL_ID'
     payload = {
         "job_id": generate_job_id(),
         "model_input": {
