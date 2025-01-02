@@ -3,11 +3,11 @@ import json
 from typing import Dict, Any
 
 # You must use a model that supports tool calling (function calling)
-model_id = "hermes-3-llama3.1-8b"
+model_id = "hermes-3-llama3.1-8b" 
 
 # Configure the OpenAI client
 client = OpenAI(
-    api_key="your_user_id#your_api_key",
+    api_key="your_user_id#your_api_key",  # for API key visit = https://dev-api-form.heurist.ai/
     base_url="https://llm-gateway.heurist.xyz"
 )
 

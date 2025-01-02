@@ -1,7 +1,7 @@
 (async () => {
     const fetch = (await import('node-fetch')).default; 
-    
-    const apiKey = 'your_user_id#your_api_key';
+
+    const apiKey = 'your_user_id#your_api_key'; // for API key visit = https://dev-api-form.heurist.ai/
     const baseUrl = 'https://llm-gateway.heurist.xyz';
     const model_id = 'hermes-3-llama3.1-8b';
   
