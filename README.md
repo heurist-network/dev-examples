@@ -35,7 +35,7 @@ For **LLM (Large Language Models)**, you can integrate using the **LLM Gateway**
 - **llm_openai_sdk.py**: Demonstrates how to use the **OpenAI SDK** to generate text via the **LLM Gateway**, supporting both streaming and non-streaming modes.
 - **llm_rest_api.py**: Demonstrates how to use the **REST API** to communicate with the **LLM Gateway** to generate text.
 - **embedding_example.py**: Demonstrates how to use the **OpenAI SDK** to generate embeddings via the **LLM Gateway**.
-- **tool-calling.py**: This example uses the "hermes-3-llama3.1-8b" with tool-calling capabilities.
+- **tool-calling.py**: This example uses the Hermes Llama-3.1 model finetuned with tool-calling capabilities.
 
 
 
@@ -44,4 +44,4 @@ For **LLM (Large Language Models)**, you can integrate using the **LLM Gateway**
 - **llm_openai_sdk.js**: Demonstrates how to use the **OpenAI SDK** to interact with the **LLM Gateway**.
 - **llm_rest_api.js**: Demonstrates how to use the **REST API** to communicate with the **LLM Gateway**.
 - **embedding_example.js**: Demonstrates how to generate embeddings using the **OpenAI SDK** with the **LLM Gateway**.
-- **tool-calling.js**: This example uses the "hermes-3-llama3.1-8b" model with tool-calling capabilities.
+- **tool-calling.js**: This example uses the Hermes Llama-3.1 model finetuned with tool-calling capabilities.
