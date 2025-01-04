@@ -28,7 +28,7 @@ const input = ['hello', 'world'];
 async function generateEmbeddings() {
   try {
     const embeddings = await client.embeddings.create({
-      model: 'HEURIST_MODEL_ID',          // For supported models, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
+      model: 'BAAI/bge-large-en-v1.5',          // For supported models, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
       input: input,
       encoding_format: 'float',
     });
