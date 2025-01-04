@@ -26,7 +26,7 @@ async function main() {
   console.log('Starting image generation...');
   try {
     const response = await heurist.images.generate({
-      model: 'HEURIST_MODEL_ID',  // support model list = https://github.com/heurist-network/heurist-models/blob/main/models.json
+      model: 'HEURIST_MODEL_ID',  // support model list = https://docs.heurist.ai/dev-guide/supported-models
       prompt: 'a apple',    
       width: 512,           
       height: 512        

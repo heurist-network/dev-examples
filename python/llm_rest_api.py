@@ -24,7 +24,7 @@ def main():
     base_url = "https://llm-gateway.heurist.xyz/chat/completions"
 
     payload = {
-        "model": "HEURIST_MODEL_ID",  # For the supported model list, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
+        "model": "HEURIST_MODEL_ID",  # For the supported model list, visit: https://docs.heurist.ai/dev-guide/supported-models
         "messages": [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Describe a beautiful landscape with mountains and a river, avoiding any signs of human presence."}
