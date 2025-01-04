@@ -1,7 +1,7 @@
 # Heurist Integration Examples
 
 ### Supported Models:
-The following open source models are supported. View the public model list [Supported Models](https://github.com/heurist-network/heurist-models/blob/main/models.json)
+The following open source models are supported. View the public model list [Supported Models](https://docs.heurist.ai/dev-guide/supported-models)
 You can use the following model name as model_id in Heurist API/SDK.
 
 For API Key please [Click Here](https://dev-api-form.heurist.ai/)

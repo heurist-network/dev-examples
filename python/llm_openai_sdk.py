@@ -3,7 +3,7 @@ from openai import OpenAI
 # for API key visit = https://dev-api-form.heurist.ai/
 client = OpenAI(base_url="https://llm-gateway.heurist.xyz", api_key="your_user_id#your_api_key")
 
-model_id = "HEURIST_MODEL_ID" # support model list = https://github.com/heurist-network/heurist-models/blob/main/models.json
+model_id = "HEURIST_MODEL_ID" # support model list = https://docs.heurist.ai/dev-guide/supported-models
         
 
 # Pre-defined messages to set the context for the AI model.

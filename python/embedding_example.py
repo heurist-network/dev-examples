@@ -21,7 +21,7 @@ client = OpenAI(api_key=api_key, base_url=base_url)
 input = ["hello", "world"]
 
 embeddings = client.embeddings.create(
-    model="BAAI/bge-large-en-v1.5",  # For the supported model list, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
+    model="BAAI/bge-large-en-v1.5",  # For the supported model list, visit: https://docs.heurist.ai/dev-guide/supported-models
     input=input,
     encoding_format="float"
 )

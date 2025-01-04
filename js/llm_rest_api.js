@@ -19,7 +19,7 @@ async function main() {
     const apiKey = "your_user_id#your_api_key";  // For API key, visit: https://dev-api-form.heurist.ai/
     
     const payload = {
-        model: "HEURIST_MODEL_ID",  // For supported models, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
+        model: "HEURIST_MODEL_ID",  // For supported models, visit: https://docs.heurist.ai/dev-guide/supported-models
         messages: [
             {
                 role: "user",

@@ -5,7 +5,7 @@ const client = new OpenAI({
   baseURL: 'https://llm-gateway.heurist.xyz',
 });
 
-const modelId = 'HEURIST_MODEL_ID';  // For the supported model list, visit: https://github.com/heurist-network/heurist-models/blob/main/models.json
+const modelId = 'HEURIST_MODEL_ID';  // For the supported model list, visit: https://docs.heurist.ai/dev-guide/supported-models
 
 const msgs = [
   { role: 'system', content: 'You are a helpful assistant. Your output should be in CAPITAL LETTERS.' },
