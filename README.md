@@ -15,12 +15,12 @@ For **SD (Stable Diffusion) image generation**, you can integrate using the **ht
 
 
 ### Python Example Code:
-- **sd_rest_api.py**: Demonstrates how to use the **REST API** to submit an image generation job to the **Sequencer** endpoint.
+- **generate_image_rest_api.py**: Demonstrates how to use the **REST API** to submit an image generation job to the **Sequencer** endpoint.
 - **smartgen.py**: Demonstrates using **smartgen** for generative tasks in a Python environment.
 
 ### JavaScript Example Code:
-- **sd_heurist_sdk.js**: Demonstrates using the **Heurist SDK** for image generation using the **REST API**.
-- **sd_rest_api.py**: Demonstrates how to use the **REST API** to submit an image generation job to the **Sequencer** endpoint.
+- **generate_image_heurist_sdk.js**: Demonstrates using the **Heurist SDK** for image generation using the **REST API**.
+- **generate_image_rest_api.py**: Demonstrates how to use the **REST API** to submit an image generation job to the **Sequencer** endpoint.
 - **smartgen.js**: Demonstrates using **smartgen** for generative tasks in a JavaScript environment.
 
 To generate images using the Heurist platform, you can either use the **REST API** or the **HEURIST SDK**.
