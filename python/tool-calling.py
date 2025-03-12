@@ -140,8 +140,28 @@ def query_llm_with_tools(prompt: str) -> str:
         else:
             tool_response = "Unknown function called"
         
-        # Add the tool response to the conversation
-        messages.append(response.choices[0].message)
+        # Add the properly formatted assistant message
+        assistant_message = {
+            'role': 'assistant',
+            'content': response.choices[0].message.content or "",  # Use empty string instead of null
+        }
+        
+        # Add tool calls separately to ensure proper formatting
+        if response.choices[0].message.tool_calls:
+            assistant_message['tool_calls'] = [
+                {
+                    'id': tc.id,
+                    'type': tc.type,
+                    'function': {
+                        'name': tc.function.name,
+                        'arguments': tc.function.arguments
+                    }
+                } for tc in response.choices[0].message.tool_calls
+            ]
+        
+        messages.append(assistant_message)
+        
+        # Add the tool response
         messages.append({
             'role': 'tool',
             'content': tool_response,
