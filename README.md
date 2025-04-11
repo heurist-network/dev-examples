@@ -7,6 +7,22 @@ You can use the following model name as model_id in Heurist API/SDK.
 For API Key please [Click Here](https://dev-api-form.heurist.ai/)
 
 Heurist Official Documentation : [Click Here](https://docs.heurist.ai/introduction)
+
+## Mesh Agent
+
+The `telegram_group_agents` example demonstrates how to integrate multiple Heurist Mesh Agents into a Telegram bot. This example showcases:
+
+### Supported Agents:
+- **ExaSearchAgent**: Web search and question answering
+- **ElfaTwitterIntelligenceAgent**: Twitter analysis and trending token tracking
+- **FirecrawlSearchAgent**: Advanced web search and data extraction
+- **SolWalletAgent**: Blockchain wallet analysis
+- **TwitterInsightAgent**: Twitter follower history and mentions tracking
+
+
+Check out the complete example in the [python/telegram_group_agents](python/telegram_group_agents) directory.
+
+
 ## Image Generation
 
 [Image Generation Docs](https://docs.heurist.ai/dev-guide/image-generation/introduction)
