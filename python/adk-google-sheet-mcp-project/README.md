@@ -1,12 +1,13 @@
 # Crypto Data Pipeline
 
-A cryptocurrency data assistant built with Google's Agent Development Kit (ADK) that integrates with MCP Servers to fetch real-time cryptocurrency price information and automatically save it to Google Sheets.
+A data assistant built with Google's Agent Development Kit (ADK) that integrates with MCP Servers to fetch real-time information from various sources including cryptocurrency data, social media, blockchain security, and financial analytics, and automatically save it to Google Sheets.
 
 ## Features
 
-- Fetch real-time cryptocurrency data (price, market cap, volume, 24h change)
+- Fetch real-time cryptocurrency and financial market data
+- Access social media and blockchain security information
 - Save data automatically to Google Sheets
-- Interactive chat interface to query crypto prices
+- Interactive chat interface for data queries across multiple domains
 - Multiple MCP server integration for advanced tool capabilities
 - Robust error handling and data extraction
 
@@ -15,16 +16,35 @@ A cryptocurrency data assistant built with Google's Agent Development Kit (ADK) 
 - Python 3.9+
 - Google Cloud account with Google Sheets API and Google Drive API enabled
 - Service account with Google Sheets access
-- MCP tools client (`mcp-proxy`)
+- Heurist API key for accessing Heurist Mesh MCP platform
+- MCP tools client ([mcp-proxy](https://github.com/sparfenyuk/mcp-proxy))
 - UV package manager for Python (`uvx`)
 
 ## MCP Server Integration
 
 This project leverages two Model Context Protocol (MCP) servers:
 
-1. **Crypto Data MCP Server**: Connects to a specialized MCP server that provides access to cryptocurrency data APIs. This server handles API authentication, rate limiting, and data formatting.
+1. **Heurist Mesh MCP Platform**: Connects to the [Heurist Mesh MCP platform](https://mcp.heurist.ai/) which provides access to multiple AI agents including:
+   - CoinGecko (cryptocurrency data)
+   - Elfa Twitter (Twitter data)
+   - GoPlus (blockchain security)
+   - DexScreener (DEX analytics)
+   - Zerion (DeFi portfolio)
+   - And many other social media and blockchain-related services
+
+   The platform allows you to select which agents you want to include in your custom MCP server and provides a dedicated endpoint URL.
 
 2. **Google Sheets MCP Server**: Integrates with [mcp-google-sheets](https://github.com/xing5/mcp-google-sheets) to provide direct interaction with Google Sheets, enabling creation, reading, updating, and management of spreadsheets through the Google Sheets API.
+
+## MCP Proxy
+
+This project uses [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy), a tool that lets you switch between server transports. It supports two modes:
+
+1. **stdio to SSE mode**: Connects to remote SSE servers (like Heurist Mesh MCP) even when not natively supported by clients. This mode is used to connect to the Heurist Mesh platform.
+
+2. **SSE to stdio mode**: Exposes a local stdio server as an SSE server. This mode is used for the Google Sheets MCP server.
+
+The proxy handles the transport layer communication, allowing the different components to work together seamlessly.
 
 ## Installation
 
@@ -39,9 +59,16 @@ This project leverages two Model Context Protocol (MCP) servers:
    pip install -r requirements.txt
    ```
 
-3. Install the MCP client:
+3. Install the MCP proxy client:
    ```
-   npm install -g mcp-proxy
+   # Option 1: With uv (recommended)
+   uv tool install mcp-proxy
+
+   # Option 2: With pipx (alternative)
+   pipx install mcp-proxy
+
+   # Option 3: Latest version from GitHub
+   uv tool install git+https://github.com/sparfenyuk/mcp-proxy
    ```
 
 4. Install UV package manager:
@@ -50,6 +77,14 @@ This project leverages two Model Context Protocol (MCP) servers:
    ```
 
 ## Configuration
+
+### Heurist Mesh MCP Setup
+
+1. Visit [Heurist Mesh MCP platform](https://mcp.heurist.ai/)
+2. Enter your Heurist API key (or register for a free key)
+3. Select the agents you want to include (CoinGecko, GoPlus, etc.)
+4. Create a dedicated MCP server
+5. Copy the provided MCP server URL for use in your environment variables
 
 ### Google Cloud Setup (Required)
 
@@ -79,8 +114,10 @@ SPREADSHEET_ID=your_spreadsheet_id_here
 SERVICE_ACCOUNT_PATH=/path/to/service-account-key.json
 DRIVE_FOLDER_ID=your_shared_folder_id_here
 
-# MCP Server endpoints
-MCP_PROXY_URL=your_crypto_mcp_server_url
+# Heurist Mesh MCP settings
+HEURIST_MESH_MCP_URL=your_heurist_mesh_mcp_url
+
+# Other settings
 UVX_PATH=/path/to/uvx
 ```
 
@@ -98,11 +135,9 @@ python workflow_agent.py
 ```
 
 You can ask questions like:
-- "What's the current price of Bitcoin?"
-- "Show me Ethereum price information"
-- "Get the latest price for Dogecoin"
-- "Create a new spreadsheet with crypto market data"
-- "Update my crypto tracking sheet with today's prices"
+- "What are the current trending tokens? Save the results to my Google new spreadsheet"
+- "Get the 5 most recent Trump posts. And identify if they are positive or negative related to finanial markets. Save the results to my Google new spreadsheet"
+
 
 ## Google Sheets MCP Integration
 
@@ -119,11 +154,24 @@ This project leverages the [mcp-google-sheets](https://github.com/xing5/mcp-goog
 7. `create_sheet` - Create a new sheet tab in an existing Google Spreadsheet
 8. Additional tools: `add_rows`, `add_columns`, `copy_sheet`, `rename_sheet`
 
+## Heurist Mesh MCP Integration
+
+The Heurist Mesh platform provides access to multiple specialized agents. Depending on which agents you selected when creating your MCP server, you'll have access to different tools. Common tools include:
+
+1. **CoinGecko**: Get cryptocurrency price data, market information, and historical charts
+2. **GoPlus**: Analyze smart contract security, check for scams, and verify token safety
+3. **DexScreener**: Access DEX trading pair data, liquidity information, and trading volumes
+4. **Zerion**: Track DeFi portfolios, token balances, and protocol interactions
+5. **Space and Time**: Query blockchain data and analytics
+6. And many more financial and blockchain-related services
+
 ## Troubleshooting
 
 - **Authentication errors**: Ensure your service account JSON is correctly referenced and has sufficient permissions
 - **MCP connection errors**: Verify that both `mcp-proxy` and `uvx` are installed correctly and accessible in your PATH
 - **Google Sheets access issues**: Check that the service account has been properly shared with the Drive folder
+- **Heurist Mesh access issues**: Verify your API key is valid and that you've created a dedicated MCP server on the platform
+- **MCP proxy issues**: If Claude Desktop can't start the server (ENOENT code in logs), try using the full path to the binary. Find it with `where mcp-proxy` (macOS, Linux) or `where.exe mcp-proxy` (Windows)
 
 ## License
 
@@ -133,4 +181,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Powered by Google's Agent Development Kit (ADK)
 - Uses [mcp-google-sheets](https://github.com/xing5/mcp-google-sheets) for Google Sheets integration
+- [Heurist Mesh MCP platform](https://mcp.heurist.ai/) for blockchain and financial data services
+- [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) for MCP server transport connectivity
 - Model Context Protocol (MCP) for tool integration 
