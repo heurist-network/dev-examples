@@ -120,16 +120,16 @@ The following environment variables can be configured in your `.env` file:
 # OpenAI API Key (required)
 OPENAI_API_KEY=your_openai_api_key
 
-# Agent settings (optional)
+# Agent settings
 OPENAI_DEFAULT_MODEL=gpt-4o
 OPENAI_TEMPERATURE=0.1
 OPENAI_MAX_TOKENS=2000
 
-# MCP Proxy settings (optional)
+# MCP Proxy settings
 MCP_PROXY_COMMAND=/path/to/mcp-proxy
-MCP_PROXY_URL=https://sequencer-v2.heurist.xyz/mcp/sse
+MCP_PROXY_URL=YOUR_MCP_SSE_URL_HERE # you can get one from https://mcp.heurist.ai/
 
-# Telegram Bot settings (optional, required if using the Telegram interface)
+# Telegram Bot settings
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=YOUR_CHAT_ID_1, YOUR_CHAT_ID_2, ...
 ```
