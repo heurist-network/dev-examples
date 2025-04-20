@@ -1,14 +1,14 @@
 # Heurist Integration Examples
 
-This repository contains reference implementations to help developers integrate with Heurist AI services, from basic LLM and image generation to advanced Mesh Agents.
+This repository contains reference implementations to help developers integrate with Heurist AI services, including LLM, embedding, image generation, and using Heurist Mesh Agents.
 
 ## Getting Started with Heurist API
 
 ### Obtaining Your API Key
 **All examples in this repository require a Heurist API key.**
 
-1. Visit the [Heurist API Registration Form](https://dev-api-form.heurist.ai/)
-2. Complete the registration to receive your API key
+1. Create an API key by purchasing credits with crypto at [Credits and API Management Portal](https://heurist.ai/credits)
+2. You can also apply for free trial credits using the [form](https://dev-api-form.heurist.ai/)
 3. Use this key in all examples by setting it as an environment variable or directly in the code
 
 ### Prerequisites
@@ -34,8 +34,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # For specific advanced examples, install their additional dependencies:
-# Telegram Multi-Agent Bot
-pip install -r mesh-agents/telegram-bot/requirements.txt
+# TokenIntel-TelegramBot
+pip install -r mesh-agents/TokenIntel-TelegramBot/requirements.txt
 
 # Google Sheets Data Pipeline
 pip install -r mesh-agents/sheets-pipeline/requirements.txt
@@ -53,14 +53,11 @@ dev-examples/
 │   └── image/          # Image generation examples (both JS and Python)
 │
 ├── mesh-agents/        # Advanced Mesh Agent examples
-│   ├── telegram-bot/   # Telegram group agents example
+│   ├── TokenIntel-TelegramBot/   # Crypto and web3 intelligence Telegram bot
 │   └── sheets-pipeline/ # Google Sheets data pipeline
-│
-├── js/                 # Legacy organization (for backward compatibility)
-└── python/             # Legacy organization (for backward compatibility)
 ```
 
-## Basic Integration Examples
+## Basic Generative AI Integration Examples
 
 ### LLM Integration
 [`basic/llm/`](basic/llm/) - Access Large Language Models through Heurist's LLM Gateway.
@@ -88,18 +85,17 @@ Examples in both JavaScript and Python for:
 
 [Image Generation Documentation](https://docs.heurist.ai/dev-guide/image-generation/introduction)
 
-## Advanced: Heurist Mesh Agents with MCP
+## Heurist Mesh Agents
 
-[`mesh-agents/`](mesh-agents/) - Specialized AI agents that provide domain-specific capabilities through the Model Context Protocol (MCP).
+[`mesh-agents/`](mesh-agents/) - Specialized AI agents that provide domain-specific capabilities through API and MCP (Model Context Protocol).
 
-### Telegram Multi-Agent Bot
-[`mesh-agents/telegram-bot/`](mesh-agents/telegram-bot/) - Integrates multiple specialized agents into a Telegram bot:
+### TokenIntel-TelegramBot
+[`mesh-agents/TokenIntel-TelegramBot/`](mesh-agents/TokenIntel-TelegramBot/) - Integrates multiple specialized agents into a Telegram bot for crypto and web3 intelligence:
 
 - ExaSearchAgent (web search)
 - ElfaTwitterIntelligenceAgent (Twitter analysis)
 - FirecrawlSearchAgent (advanced web search)
 - SolWalletAgent (blockchain wallet analysis)
-- TwitterInsightAgent (Twitter follower tracking)
 
 ### Google Sheets Data Pipeline
 [`mesh-agents/sheets-pipeline/`](mesh-agents/sheets-pipeline/) - Data pipeline that:
