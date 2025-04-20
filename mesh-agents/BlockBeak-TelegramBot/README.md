@@ -57,7 +57,7 @@ python main.py [options]
 ```
 
 Options:
-- `--no-stream`: Disable streaming mode (responses appear all at once)
+- `--telegram`: Enable Telegram interface, otherwise the agent will run in CLI mode
 - `--model MODEL`: Specify the OpenAI model to use (default: gpt-4o)
 - `--temperature TEMP`: Set the model temperature (default: 0.1)
 - `--max-tokens TOKENS`: Set the maximum number of tokens (default: 2000)
