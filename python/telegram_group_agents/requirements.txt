@@ -1,4 +1,0 @@
-aiohttp>=3.11.14
-openai-agents>=0.0.7
-pytelegrambotapi>=4.26.0
-python-telegram-bot>=22.0
