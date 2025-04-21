@@ -1,14 +1,13 @@
 import asyncio
 import re
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool import MCPToolset
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams, StdioServerParameters
 from google.adk.sessions import InMemorySessionService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService # Optional
 from google.adk.runners import Runner
 from google.genai import types
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from mcp.client.stdio import StdioServerParameters
 from dotenv import load_dotenv
 import json
 import datetime
@@ -31,7 +30,7 @@ load_dotenv(override=True)
 APP_NAME = "crypto_data_pipeline"
 USER_ID = "user_123"
 SESSION_ID = "session_123"
-GEMINI_MODEL = "gemini-2.5-flash-preview-04-17"
+GEMINI_MODEL = "gemini-2.5-pro-preview-03-25"
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1  # seconds
 
@@ -46,9 +45,8 @@ async def get_tools_async():
         # First MCP server
         logger.info("Connecting to first MCP server...")
         tools1, stack1 = await MCPToolset.from_server(
-            connection_params=StdioServerParameters(
-                command='mcp-proxy',
-                args=[os.environ.get('HEURIST_MESH_MCP_URL')]
+            connection_params=SseServerParams(
+                url=os.environ.get('HEURIST_MESH_MCP_URL')
             )
         )
         exit_stack.push_async_exit(lambda *args, **kwargs: stack1.aclose())
@@ -91,7 +89,8 @@ You are a expert in tool use. You can finish the tasks using the tools provided 
 When dealing with large amounts of data, try to process it in smaller chunks to avoid hitting API limits.
 If a network error occurs, provide a helpful message to the user suggesting they try again or use a simpler query.
         """,
-        tools=tools
+        tools=tools,
+        generate_content_config=types.GenerateContentConfig(maxOutputTokens=100000) # https://ai.google.dev/api/generate-content#v1beta.GenerationConfig
     )
     return crypto_agent, exit_stack
 
