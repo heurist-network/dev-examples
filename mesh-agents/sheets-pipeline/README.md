@@ -24,7 +24,7 @@ A data assistant built with Google's Agent Development Kit (ADK) that integrates
 
 This project leverages two Model Context Protocol (MCP) servers:
 
-1. **Heurist Mesh MCP Platform**: Connects to the [Heurist Mesh MCP platform](https://mcp.heurist.ai/) which provides access to multiple AI agents including:
+1. **Heurist Mesh MCP Platform**: Connects directly to the [Heurist Mesh MCP platform](https://mcp.heurist.ai/) using SSE (Server-Sent Events) protocol. The platform provides access to multiple AI agents including:
    - CoinGecko (cryptocurrency data)
    - Elfa Twitter (Twitter data)
    - GoPlus (blockchain security)
@@ -32,19 +32,15 @@ This project leverages two Model Context Protocol (MCP) servers:
    - Zerion (DeFi portfolio)
    - And many other social media and blockchain-related services
 
-   The platform allows you to select which agents you want to include in your custom MCP server and provides a dedicated endpoint URL.
+   The platform allows you to create a custom MCP server with the specific agents you need by:
+   - Visiting [mcp.heurist.ai](https://mcp.heurist.ai/)
+   - Entering your Heurist API key (or registering for a free key)
+   - Selecting the agents you want to include
+   - Creating a dedicated MCP server
+   - Copying the provided SSE endpoint URL for use in your environment variables (`HEURIST_MESH_MCP_URL`)
 
 2. **Google Sheets MCP Server**: Integrates with [mcp-google-sheets](https://github.com/xing5/mcp-google-sheets) to provide direct interaction with Google Sheets, enabling creation, reading, updating, and management of spreadsheets through the Google Sheets API.
 
-## MCP Proxy
-
-This project uses [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy), a tool that lets you switch between server transports. It supports two modes:
-
-1. **stdio to SSE mode**: Connects to remote SSE servers (like Heurist Mesh MCP) even when not natively supported by clients. This mode is used to connect to the Heurist Mesh platform.
-
-2. **SSE to stdio mode**: Exposes a local stdio server as an SSE server. This mode is used for the Google Sheets MCP server.
-
-The proxy handles the transport layer communication, allowing the different components to work together seamlessly.
 
 ## Installation
 
@@ -84,7 +80,7 @@ The proxy handles the transport layer communication, allowing the different comp
 2. Enter your Heurist API key (or register for a free key)
 3. Select the agents you want to include (CoinGecko, GoPlus, etc.)
 4. Create a dedicated MCP server
-5. Copy the provided MCP server URL for use in your environment variables
+5. Copy the provided SSE endpoint URL for use in your `HEURIST_MESH_MCP_URL` environment variable
 
 ### Google Cloud Setup (Required)
 
@@ -106,19 +102,13 @@ Create a `.env` file with the following variables:
 GOOGLE_GENAI_USE_VERTEXAI=FALSE
 GOOGLE_API_KEY=your_gemini_api_key_here
 
-# Google Sheets settings
-SERVICE_ACCOUNT_FILE=credentials.json
-SPREADSHEET_ID=your_spreadsheet_id_here
-
 # Google Sheets MCP Server settings
+UVX_PATH=/path/to/uvx
 SERVICE_ACCOUNT_PATH=/path/to/service-account-key.json
 DRIVE_FOLDER_ID=your_shared_folder_id_here
 
 # Heurist Mesh MCP settings
 HEURIST_MESH_MCP_URL=your_heurist_mesh_mcp_url
-
-# Other settings
-UVX_PATH=/path/to/uvx
 ```
 
 ## Project Structure
@@ -135,8 +125,19 @@ python workflow_agent.py
 ```
 
 You can ask questions like:
-- "What are the current trending tokens? Save the results to my Google new spreadsheet"
-- "Get the 5 most recent Trump posts. And identify if they are positive or negative related to finanial markets. Save the results to my Google new spreadsheet"
+- "Find me the trending tokens on CoinGecko today. No need to confirm—just save their symbol, current price (USD) by create a new spreadsheet‘CoinGecko Dashboard’, sheet 'Trending', if the spreadsheet not exist."
+- "Get every tweet posted by @elonmusk. No need to confirm—just create a new spreadsheet titled 'elonmusk‑tweets‑2025‑04‑21' with a sheet named 'elonmusk', and write these columns for each tweet: timestamp, text"
+
+## Heurist Mesh MCP Integration
+
+The Heurist Mesh platform provides access to multiple specialized agents through a direct SSE connection. Depending on which agents you selected when creating your MCP server, you'll have access to different tools. Common tools include:
+
+1. **CoinGecko**: Get cryptocurrency price data, market information, and historical charts
+2. **GoPlus**: Analyze smart contract security, check for scams, and verify token safety
+3. **DexScreener**: Access DEX trading pair data, liquidity information, and trading volumes
+4. **Zerion**: Track DeFi portfolios, token balances, and protocol interactions
+5. **Space and Time**: Query blockchain data and analytics
+6. And many more financial and blockchain-related services
 
 
 ## Google Sheets MCP Integration
@@ -146,32 +147,56 @@ This project leverages the [mcp-google-sheets](https://github.com/xing5/mcp-goog
 ### Available Tools
 
 1. `get_sheet_data` - Get data from a specific sheet in a Google Spreadsheet
+   - Input: spreadsheet_id, sheet, range (optional)
+   - Returns: A 2D array of the sheet data
+
 2. `update_cells` - Update cells in a Google Spreadsheet
+   - Input: spreadsheet_id, sheet, range, data (2D array)
+   - Returns: Result of the update operation
+
 3. `batch_update_cells` - Batch update multiple ranges in a Google Spreadsheet
+   - Input: spreadsheet_id, sheet, ranges (dictionary mapping range strings to 2D arrays)
+   - Returns: Result of the batch update operation
+
 4. `list_sheets` - List all sheets in a Google Spreadsheet
+   - Input: spreadsheet_id
+   - Returns: List of sheet names
+
 5. `list_spreadsheets` - List all spreadsheets in the configured Google Drive folder
+   - Returns: List of spreadsheets with their ID and title
+   - Note: Lists spreadsheets in the shared folder when using service account authentication
+
 6. `create_spreadsheet` - Create a new Google Spreadsheet
+   - Input: title
+   - Returns: Information about the newly created spreadsheet including its ID
+   - Note: Created in the configured folder when using service account authentication
+
 7. `create_sheet` - Create a new sheet tab in an existing Google Spreadsheet
-8. Additional tools: `add_rows`, `add_columns`, `copy_sheet`, `rename_sheet`
+   - Input: spreadsheet_id, title
+   - Returns: Information about the newly created sheet
 
-## Heurist Mesh MCP Integration
+8. `get_multiple_sheet_data` - Get data from multiple specific ranges in Google Spreadsheets
+   - Input: queries (array of objects with spreadsheet_id, sheet, and range)
+   - Returns: List of objects containing query parameters and fetched data or error
 
-The Heurist Mesh platform provides access to multiple specialized agents. Depending on which agents you selected when creating your MCP server, you'll have access to different tools. Common tools include:
+9. `get_multiple_spreadsheet_summary` - Get a summary of multiple Google Spreadsheets
+   - Input: spreadsheet_ids, rows_to_fetch (optional, default 5)
+   - Returns: List of objects with spreadsheet title, sheet names, headers, and first few rows
 
-1. **CoinGecko**: Get cryptocurrency price data, market information, and historical charts
-2. **GoPlus**: Analyze smart contract security, check for scams, and verify token safety
-3. **DexScreener**: Access DEX trading pair data, liquidity information, and trading volumes
-4. **Zerion**: Track DeFi portfolios, token balances, and protocol interactions
-5. **Space and Time**: Query blockchain data and analytics
-6. And many more financial and blockchain-related services
+10. `share_spreadsheet` - Share a Google Spreadsheet with multiple users
+    - Input: spreadsheet_id, recipients (array with email_address and role), send_notification (optional)
+    - Returns: Dictionary with lists of successes and failures
+
+11. Additional tools: `add_rows`, `add_columns`, `copy_sheet`, `rename_sheet`
+
+
 
 ## Troubleshooting
 
 - **Authentication errors**: Ensure your service account JSON is correctly referenced and has sufficient permissions
-- **MCP connection errors**: Verify that both `mcp-proxy` and `uvx` are installed correctly and accessible in your PATH
+- **MCP connection errors**: Verify your Heurist Mesh MCP URL is correct and that your API key is valid
 - **Google Sheets access issues**: Check that the service account has been properly shared with the Drive folder
-- **Heurist Mesh access issues**: Verify your API key is valid and that you've created a dedicated MCP server on the platform
-- **MCP proxy issues**: If Claude Desktop can't start the server (ENOENT code in logs), try using the full path to the binary. Find it with `where mcp-proxy` (macOS, Linux) or `where.exe mcp-proxy` (Windows)
+- **Second MCP server connection issues**: If you encounter timeouts or errors with the Google Sheets MCP server, check the `UVX_PATH`, `SERVICE_ACCOUNT_PATH`, and `DRIVE_FOLDER_ID` environment variables. You can also set `SKIP_SECOND_MCP=True` in workflow_agent.py to bypass this server if needed.
 
 ## License
 
@@ -182,5 +207,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Powered by Google's Agent Development Kit (ADK)
 - Uses [mcp-google-sheets](https://github.com/xing5/mcp-google-sheets) for Google Sheets integration
 - [Heurist Mesh MCP platform](https://mcp.heurist.ai/) for blockchain and financial data services
-- [mcp-proxy](https://github.com/sparfenyuk/mcp-proxy) for MCP server transport connectivity
 - Model Context Protocol (MCP) for tool integration 
