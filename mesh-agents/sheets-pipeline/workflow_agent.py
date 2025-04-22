@@ -30,9 +30,68 @@ load_dotenv(override=True)
 APP_NAME = "crypto_data_pipeline"
 USER_ID = "user_123"
 SESSION_ID = "session_123"
-GEMINI_MODEL = "gemini-2.5-pro-preview-03-25"
+GEMINI_MODEL = "gemini-2.5-flash-preview-04-17" # "gemini-2.5-pro-preview-03-25"
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1  # seconds
+# Skip second MCP server if it causes problems
+SKIP_SECOND_MCP = False  # Set to False to attempt connecting to the second MCP server
+
+INSTRUCTION = """
+## 1. High-level role
+
+**You are a data-ops assistant.**  
+Your job is to:
+
+1. Understand the user's request for external data (e.g., crypto prices, API responses, on-chain stats).  
+2. Fetch or compute that data with whatever non-Sheets tools are available to you.  
+3. Persist the results into the correct Google Spreadsheet, creating sheets/columns when needed, while preserving headers and existing rows.
+
+*Keep every step deterministic, idempotent, and fully traceable inside the spreadsheet.*
+
+---
+
+## 2. General workflow you must follow
+
+1. **Identify the target spreadsheet & sheet**  
+   - If the user gives a link, extract the `spreadsheet_id`.  
+   - If they give only a title, call `list_spreadsheets` and match on *title* (case-insensitive). If none exists, call `create_spreadsheet`.  
+   - If the required sheet tab is missing, call `create_sheet`.
+
+2. **Inspect existing layout**  
+   - Call `get_sheet_data` on the header row (`range: '1:1'`) to learn the column order.  
+   - If you need to append rows, call `get_sheet_data` *without* a range to count existing rows.
+
+3. **Fetch / compute the new data**  
+   - Use the domain-specific tools or external APIs that satisfy the user's query.  
+   - Sanitise values: strings only, no formulas, booleans as `TRUE/FALSE`, dates in ISO‑8601.
+
+4. **Write the data**  
+   - **Appending rows:**  
+     1. Determine the next empty row number **N**.  
+     2. Call `update_cells` with `range: 'A${N}:...'` and a 2-D array of the new rows.  
+   - **Updating specific cells or many ranges:**  
+     - Build a *ranges → values* map and call `batch_update_cells`.  
+   - **Adding structure:**  
+     - If you need new columns, call `add_columns`; then write headers first, data second.
+
+5. **Post-write verification** *(optional but recommended)*  
+   - Read back the same range with `get_sheet_data`; compare in-memory vs. expected.  
+   - Log any mismatch to the user.
+
+6. **Share if required**  
+   - When the user asks to give others access, call `share_spreadsheet` with the correct e-mails and roles.
+
+---
+
+## 3.Style & safety rules
+
+- Never overwrite headers (row 1) unless explicitly instructed.  
+- Do not expose credentials or raw JSON key content.  
+- Gracefully handle `PERMISSION_DENIED` or `NOT_FOUND` errors: explain and stop.  
+- Use `batch_update_cells` when touching ≥ 2 non-contiguous ranges; otherwise use `update_cells`.  
+- All tool calls **must** be wrapped in explicit JSON blocks per ADK format.  
+- Echo a short natural-language summary to the user after successful writes (e.g., "Added 3 rows of BTC price data to *prices* sheet in **crypto-tracker** spreadsheet.").
+"""
 
 # --- Step 1: Import Tools from MCP Server ---
 async def get_tools_async():
@@ -53,21 +112,46 @@ async def get_tools_async():
         all_tools.extend(tools1)
         logger.info(f"Successfully connected to first MCP server. Got {len(tools1)} tools.")
         
-        # Second MCP server
-        logger.info("Connecting to second MCP server...")
-        tools2, stack2 = await MCPToolset.from_server(
-            connection_params=StdioServerParameters(
-                command=os.environ.get('UVX_PATH'),
-                args=["mcp-google-sheets"],
-                env={
-                    "SERVICE_ACCOUNT_PATH": os.environ.get('SERVICE_ACCOUNT_PATH'),
-                    "DRIVE_FOLDER_ID": os.environ.get('DRIVE_FOLDER_ID')
-                }
-            )
-        )
-        exit_stack.push_async_exit(lambda *args, **kwargs: stack2.aclose())
-        all_tools.extend(tools2)
-        logger.info(f"Successfully connected to second MCP server. Got {len(tools2)} tools.")
+        # Second MCP server with timeout - changed approach
+        if not SKIP_SECOND_MCP:
+            logger.info("Connecting to second MCP server...")
+            try:
+                # Add a timeout context for the second server connection
+                async with asyncio.timeout(30):  # 30 second timeout
+                    # Ensure we have all required environment variables
+                    uvx_path = os.environ.get('UVX_PATH')
+                    service_account_path = os.environ.get('SERVICE_ACCOUNT_PATH')
+                    drive_folder_id = os.environ.get('DRIVE_FOLDER_ID')
+                    
+                    logger.info(f"Using UVX_PATH: {uvx_path}")
+                    logger.info(f"Using SERVICE_ACCOUNT_PATH: {service_account_path}")
+                    logger.info(f"Using DRIVE_FOLDER_ID: {drive_folder_id}")
+                    
+                    if not all([uvx_path, service_account_path, drive_folder_id]):
+                        raise ValueError("Missing required environment variables for second MCP server")
+                    
+                    # More specific command and arguments
+                    tools2, stack2 = await MCPToolset.from_server(
+                        connection_params=StdioServerParameters(
+                            command=uvx_path,
+                            args=["run", "/Users/frankhe/miniconda3/bin/mcp-google-sheets"],
+                            env={
+                                "SERVICE_ACCOUNT_PATH": service_account_path,
+                                "DRIVE_FOLDER_ID": drive_folder_id
+                            }
+                        )
+                    )
+                    
+                    exit_stack.push_async_exit(lambda *args, **kwargs: stack2.aclose())
+                    all_tools.extend(tools2)
+                    logger.info(f"Successfully connected to second MCP server. Got {len(tools2)} tools.")
+            except asyncio.TimeoutError:
+                logger.error("Timeout connecting to second MCP server. Continuing with only first server tools.")
+            except Exception as e:
+                logger.error(f"Error connecting to second MCP server: {e}")
+                logger.error("Continuing with only first server tools.")
+        else:
+            logger.info("Skipping second MCP server as configured.")
     except Exception as e:
         logger.error(f"Error connecting to MCP servers: {e}")
         # Make sure to clean up any resources that were successfully acquired
@@ -149,17 +233,52 @@ async def async_main():
                 try:
                     events_async = await process_user_query_with_retry(runner, session, user_query)
                     
-                    # Print assistant responses
-                    response_text = ""
+                    # Process events, including function calls and responses
                     async for event in events_async:
-                        if hasattr(event, 'message') and event.message and hasattr(event.message, 'parts'):
-                            for part in event.message.parts:
-                                if hasattr(part, 'text') and part.text:
-                                    response_text += part.text
-                        logger.debug(f"Event: {event}")
+                        # Skip empty content
+                        if not hasattr(event, 'content') or not event.content:
+                            continue
+                        
+                        author = event.author
+                        # Uncomment to see full event payload for debugging
+                        # logger.debug(f"\n[{author}]: {json.dumps(event)}")
+                        
+                        # Process function calls
+                        function_calls = [
+                            e.function_call for e in event.content.parts if hasattr(e, 'function_call') and e.function_call
+                        ]
+                        
+                        # Process function responses
+                        function_responses = [
+                            e.function_response for e in event.content.parts if hasattr(e, 'function_response') and e.function_response
+                        ]
+                        
+                        # Process text responses
+                        if event.content.parts and hasattr(event.content.parts[0], 'text') and event.content.parts[0].text:
+                            text_response = event.content.parts[0].text
+                            print(f"\n[{author}]: {text_response}")
+                        
+                        # Display function calls
+                        if function_calls:
+                            for function_call in function_calls:
+                                print(
+                                    f"\n[{author}]: {function_call.name}( {json.dumps(function_call.args)} )"
+                                )
+                        
+                        # Display function responses
+                        elif function_responses:
+                            for function_response in function_responses:
+                                function_name = function_response.name
+                                application_payload = function_response.response
+                                
+                                # Special handling for different function types if needed
+                                # Example: if function_name == "specific_function_name":
+                                #     application_payload = custom_processing(application_payload)
+                                
+                                print(
+                                    f"\n[{author}]: {function_name} responds -> {application_payload}"
+                                )
                     
-                    if response_text:
-                        print(f"\nAssistant: {response_text}\n")
                     print("-" * 50)
                 
                 except httpx.ConnectError as e:
