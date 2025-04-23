@@ -1,19 +1,14 @@
 import asyncio
-import re
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams, StdioServerParameters
 from google.adk.sessions import InMemorySessionService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService # Optional
 from google.adk.runners import Runner
 from google.genai import types
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 from dotenv import load_dotenv
 import json
 import datetime
-import ast
 import os
-import time
 import logging
 import httpx
 from contextlib import AsyncExitStack
@@ -27,10 +22,10 @@ logger = logging.getLogger(__name__)
 load_dotenv(override=True)
 
 # --- Configuration ---
-APP_NAME = "crypto_data_pipeline"
+APP_NAME = "adk_agent_heurist_mcp_data_pipeline"
 USER_ID = "user_123"
 SESSION_ID = "session_123"
-GEMINI_MODEL = "gemini-2.5-flash-preview-04-17" # "gemini-2.5-pro-preview-03-25"
+GEMINI_MODEL = "gemini-2.5-flash-preview-04-17" # "gemini-2.5-flash-preview-04-17" # "gemini-2.5-pro-preview-03-25"
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1  # seconds
 # Skip second MCP server if it causes problems
@@ -68,7 +63,7 @@ Your job is to:
 4. **Write the data**  
    - **Appending rows:**  
      1. Determine the next empty row number **N**.  
-     2. Call `update_cells` with `range: 'A${N}:...'` and a 2-D array of the new rows.  
+     2. Call `update_cells` with `range: 'A$$N:...'` and a 2-D array of the new rows.  
    - **Updating specific cells or many ranges:**  
      - Build a *ranges → values* map and call `batch_update_cells`.  
    - **Adding structure:**  
@@ -167,14 +162,10 @@ async def get_agent_async():
     tools, exit_stack = await get_tools_async()
     crypto_agent = LlmAgent(
         model=GEMINI_MODEL,
-        name='crypto_data_assistant',
-        instruction="""
-You are a expert in tool use. You can finish the tasks using the tools provided and based on the user's request.
-When dealing with large amounts of data, try to process it in smaller chunks to avoid hitting API limits.
-If a network error occurs, provide a helpful message to the user suggesting they try again or use a simpler query.
-        """,
+        name='adk_agent_heurist_mcp_data_pipeline',
+        instruction=INSTRUCTION,
         tools=tools,
-        generate_content_config=types.GenerateContentConfig(maxOutputTokens=100000) # https://ai.google.dev/api/generate-content#v1beta.GenerationConfig
+        generate_content_config=types.GenerateContentConfig(maxOutputTokens=500000) # https://ai.google.dev/api/generate-content#v1beta.GenerationConfig
     )
     return crypto_agent, exit_stack
 
@@ -203,6 +194,14 @@ async def async_main():
         logger.info("Initializing agent with MCP tools")
         root_agent, exit_stack = await get_agent_async()
         
+        # Create a logs directory if it doesn't exist
+        logs_dir = os.path.join(os.getcwd(), "conversation_logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Generate a unique filename with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file_path = os.path.join(logs_dir, f"conversation_{timestamp}.txt")
+        
         # Use with statement to ensure proper cleanup
         async with exit_stack:
             session = session_service.create_session(
@@ -218,18 +217,31 @@ async def async_main():
             
             print("\n===== Interactive Data Assistant =====")
             print("Type 'exit' or 'quit' to end the conversation.\n")
+            print(f"Conversation will be saved to: {log_file_path}")
+            
+            # Initialize conversation log
+            conversation_log = ["\n===== Interactive Data Assistant =====\n"]
+            conversation_log.append(f"Session started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             
             while True:
                 # Get user input
                 user_query = input("You: ")
+                conversation_log.append(f"You: {user_query}\n")
                 
                 # Check if user wants to exit
                 if user_query.lower() in ['exit', 'quit']:
                     print("Ending conversation. Goodbye!")
+                    conversation_log.append("Assistant: Ending conversation. Goodbye!\n")
+                    # Save the conversation log to file before exiting
+                    with open(log_file_path, "w") as f:
+                        f.writelines(conversation_log)
+                    print(f"Conversation saved to: {log_file_path}")
                     break
                 
                 # Process the user query with retry logic
                 print("\nAssistant: Processing your request...")
+                conversation_log.append("\nAssistant: Processing your request...\n")
+                
                 try:
                     events_async = await process_user_query_with_retry(runner, session, user_query)
                     
@@ -240,8 +252,6 @@ async def async_main():
                             continue
                         
                         author = event.author
-                        # Uncomment to see full event payload for debugging
-                        # logger.debug(f"\n[{author}]: {json.dumps(event)}")
                         
                         # Process function calls
                         function_calls = [
@@ -257,13 +267,14 @@ async def async_main():
                         if event.content.parts and hasattr(event.content.parts[0], 'text') and event.content.parts[0].text:
                             text_response = event.content.parts[0].text
                             print(f"\n[{author}]: {text_response}")
+                            conversation_log.append(f"\n[{author}]: {text_response}\n")
                         
                         # Display function calls
                         if function_calls:
                             for function_call in function_calls:
-                                print(
-                                    f"\n[{author}]: {function_call.name}( {json.dumps(function_call.args)} )"
-                                )
+                                function_output = f"\n[{author}]: {function_call.name}( {json.dumps(function_call.args)} )"
+                                print(function_output)
+                                conversation_log.append(f"{function_output}\n")
                         
                         # Display function responses
                         elif function_responses:
@@ -271,25 +282,35 @@ async def async_main():
                                 function_name = function_response.name
                                 application_payload = function_response.response
                                 
-                                # Special handling for different function types if needed
-                                # Example: if function_name == "specific_function_name":
-                                #     application_payload = custom_processing(application_payload)
-                                
-                                print(
-                                    f"\n[{author}]: {function_name} responds -> {application_payload}"
-                                )
+                                function_response_output = f"\n[{author}]: {function_name} responds -> {application_payload}"
+                                print(function_response_output)
+                                conversation_log.append(f"{function_response_output}\n")
                     
-                    print("-" * 50)
+                    divider = "-" * 50
+                    print(divider)
+                    conversation_log.append(f"{divider}\n")
                 
                 except httpx.ConnectError as e:
-                    logger.error(f"Network connection error: {e}")
-                    print("\nAssistant: I'm having trouble connecting to the server. This might be due to network issues or a temporary service outage. Please try again in a moment or try a simpler query that processes less data.\n")
+                    error_msg = f"Network connection error: {e}"
+                    logger.error(error_msg)
+                    response = "\nAssistant: I'm having trouble connecting to the server. This might be due to network issues or a temporary service outage. Please try again in a moment or try a simpler query that processes less data.\n"
+                    print(response)
+                    conversation_log.append(response)
                     print("-" * 50)
+                    conversation_log.append(f"{'-' * 50}\n")
                 
                 except Exception as e:
-                    logger.error(f"Error processing query: {e}")
-                    print(f"\nAssistant: I encountered an error while processing your request: {str(e)}. Please try again or modify your query.\n")
+                    error_msg = f"Error processing query: {e}"
+                    logger.error(error_msg)
+                    response = f"\nAssistant: I encountered an error while processing your request: {str(e)}. Please try again or modify your query.\n"
+                    print(response)
+                    conversation_log.append(response)
                     print("-" * 50)
+                    conversation_log.append(f"{'-' * 50}\n")
+                    
+                # Save the conversation log after each interaction
+                with open(log_file_path, "w") as f:
+                    f.writelines(conversation_log)
                     
     except Exception as e:
         logger.error(f"Error during execution: {e}")
