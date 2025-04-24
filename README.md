@@ -53,6 +53,7 @@ dev-examples/
 │   └── image/          # Image generation examples (both JS and Python)
 │
 ├── mesh-agents/        # Advanced Mesh Agent examples
+│   ├── BlockBeak-TelegramBot/   # AI-powered Smart Telegram bot
 │   ├── TokenIntel-TelegramBot/   # Crypto and web3 intelligence Telegram bot
 │   └── sheets-pipeline/ # Google Sheets data pipeline
 ```
@@ -104,6 +105,14 @@ Examples in both JavaScript and Python for:
 - Uses Google's Agent Development Kit (ADK)
 - Connects to multiple MCP servers
 - Automatically populates Google Sheets
+
+### BlockBeak-TelegramBot
+[`mesh-agents/BlockBeak-TelegramBot/`](mesh-agents/BlockBeak-TelegramBot/) - AI-powered bird identification Telegram bot that:
+
+- Interfaces with specialized Heurist Mesh agents
+- Supports both CLI and Telegram interfaces
+- Uses MCP (Model Control Protocol) for agent connectivity
+- Provides bird identification and information services
 
 ## Creating Your Own Mesh Agent Applications
 
