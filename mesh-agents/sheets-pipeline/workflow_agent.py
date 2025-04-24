@@ -1,5 +1,6 @@
 import asyncio
 from google.adk.agents import LlmAgent
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams, StdioServerParameters
 from google.adk.sessions import InMemorySessionService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService # Optional
@@ -160,8 +161,19 @@ async def get_tools_async():
 async def get_agent_async():
     """Creates an ADK Agent equipped with tools from the MCP Server."""
     tools, exit_stack = await get_tools_async()
+    # crypto_agent = LlmAgent(
+    #     model=GEMINI_MODEL,
+    #     name='adk_agent_heurist_mcp_data_pipeline',
+    #     instruction=INSTRUCTION,
+    #     tools=tools,
+    #     generate_content_config=types.GenerateContentConfig(maxOutputTokens=500000) # https://ai.google.dev/api/generate-content#v1beta.GenerationConfig
+    # )
     crypto_agent = LlmAgent(
-        model=GEMINI_MODEL,
+        model=LiteLlm(
+            model="openai/gpt-4.1",
+            api_key=os.environ.get('OPENROUTER_API_KEY'),
+            api_base=os.environ.get('OPENROUTER_API_BASE'),
+        ),
         name='adk_agent_heurist_mcp_data_pipeline',
         instruction=INSTRUCTION,
         tools=tools,
