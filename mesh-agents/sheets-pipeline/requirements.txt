@@ -1,5 +1,6 @@
-google-adk>=0.1.0
-python-dotenv>=0.19.0
-tenacity>=8.0.0
-httpx>=0.24.0
-pydantic>=2.0.0
+google-adk >= 0.1.2
+litellm >= 1.35.0
+python-dotenv >= 0.19.0
+tenacity >= 8.0.0
+httpx >= 0.24.0
+pydantic >= 2.0.0
