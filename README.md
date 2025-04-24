@@ -107,12 +107,12 @@ Examples in both JavaScript and Python for:
 - Automatically populates Google Sheets
 
 ### BlockBeak-TelegramBot
-[`mesh-agents/BlockBeak-TelegramBot/`](mesh-agents/BlockBeak-TelegramBot/) - AI-powered bird identification Telegram bot that:
+[`mesh-agents/BlockBeak-TelegramBot/`](mesh-agents/BlockBeak-TelegramBot/) - AI-powered smart Telegram bot that:
 
 - Interfaces with specialized Heurist Mesh agents
 - Supports both CLI and Telegram interfaces
 - Uses MCP (Model Control Protocol) for agent connectivity
-- Provides bird identification and information services
+- Provides smart analysis on crypto market and information services
 
 ## Creating Your Own Mesh Agent Applications
 
