@@ -26,7 +26,12 @@ load_dotenv(override=True)
 APP_NAME = "adk_agent_heurist_mcp_data_pipeline"
 USER_ID = "user_123"
 SESSION_ID = "session_123"
-GEMINI_MODEL = "gemini-2.5-flash-preview-04-17" # "gemini-2.5-flash-preview-04-17" # "gemini-2.5-pro-preview-03-25"
+# Model configuration
+MODEL_PROVIDER = os.environ.get('MODEL_PROVIDER', 'gemini')  # 'gemini' or 'litellm'
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', "gemini-2.5-flash-preview-04-17")
+LITELLM_MODEL = os.environ.get('LITELLM_MODEL', "openai/gpt-4.1")
+LITELLM_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+LITELLM_API_BASE = os.environ.get('OPENROUTER_API_BASE')
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1  # seconds
 # Skip second MCP server if it causes problems
@@ -161,24 +166,34 @@ async def get_tools_async():
 async def get_agent_async():
     """Creates an ADK Agent equipped with tools from the MCP Server."""
     tools, exit_stack = await get_tools_async()
-    # crypto_agent = LlmAgent(
-    #     model=GEMINI_MODEL,
-    #     name='adk_agent_heurist_mcp_data_pipeline',
-    #     instruction=INSTRUCTION,
-    #     tools=tools,
-    #     generate_content_config=types.GenerateContentConfig(maxOutputTokens=500000) # https://ai.google.dev/api/generate-content#v1beta.GenerationConfig
-    # )
-    crypto_agent = LlmAgent(
-        model=LiteLlm(
-            model="openai/gpt-4.1",
-            api_key=os.environ.get('OPENROUTER_API_KEY'),
-            api_base=os.environ.get('OPENROUTER_API_BASE'),
-        ),
-        name='adk_agent_heurist_mcp_data_pipeline',
-        instruction=INSTRUCTION,
-        tools=tools,
-        generate_content_config=types.GenerateContentConfig(maxOutputTokens=500000) # https://ai.google.dev/api/generate-content#v1beta.GenerationConfig
-    )
+    
+    # Configure the agent based on the selected model provider
+    if MODEL_PROVIDER.lower() == 'gemini':
+        logger.info(f"Using Google Gemini model: {GEMINI_MODEL}")
+        crypto_agent = LlmAgent(
+            model=GEMINI_MODEL,
+            name='adk_agent_heurist_mcp_data_pipeline',
+            instruction=INSTRUCTION,
+            tools=tools,
+            generate_content_config=types.GenerateContentConfig(maxOutputTokens=500000)
+        )
+    else:  # Default to LiteLLM
+        logger.info(f"Using LiteLLM model: {LITELLM_MODEL}")
+        if not LITELLM_API_KEY or not LITELLM_API_BASE:
+            raise ValueError("LITELLM requires API_KEY and API_BASE environment variables")
+            
+        crypto_agent = LlmAgent(
+            model=LiteLlm(
+                model=LITELLM_MODEL,
+                api_key=LITELLM_API_KEY,
+                api_base=LITELLM_API_BASE,
+            ),
+            name='adk_agent_heurist_mcp_data_pipeline',
+            instruction=INSTRUCTION,
+            tools=tools,
+            generate_content_config=types.GenerateContentConfig(maxOutputTokens=500000)
+        )
+    
     return crypto_agent, exit_stack
 
 @retry(
@@ -331,6 +346,13 @@ async def async_main():
 
 if __name__ == '__main__':
     try:
+        # Print model configuration at startup
+        logger.info(f"Starting with model provider: {MODEL_PROVIDER}")
+        if MODEL_PROVIDER.lower() == 'gemini':
+            logger.info(f"Using Gemini model: {GEMINI_MODEL}")
+        else:
+            logger.info(f"Using LiteLLM model: {LITELLM_MODEL}")
+        
         asyncio.run(async_main())
     except Exception as e:
         logger.error(f"An error occurred: {e}")
