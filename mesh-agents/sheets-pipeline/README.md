@@ -74,6 +74,32 @@ This project leverages two Model Context Protocol (MCP) servers:
 
 ## Configuration
 
+### Model Provider Configuration
+
+This application supports multiple language model providers:
+
+1. **Google Gemini** (default): Uses Google's Gemini models directly
+2. **LiteLLM**: Provides access to various models including OpenAI/GPT, Anthropic, and others through OpenRouter or directly
+
+Configure your preferred model provider in the `.env` file:
+
+```
+# Model Provider Settings
+MODEL_PROVIDER=gemini  # Options: 'gemini' or 'litellm'
+GEMINI_MODEL=gemini-2.5-flash-preview-04-17  # Used when MODEL_PROVIDER=gemini
+LITELLM_MODEL=openai/gpt-4.1  # Used when MODEL_PROVIDER=litellm
+OPENROUTER_API_KEY=your_openrouter_api_key  # Required for litellm with OpenRouter
+OPENROUTER_API_BASE=https://openrouter.ai/api/v1  # Required for litellm with OpenRouter
+
+# Google Sheets MCP Server settings
+UVX_PATH=/path/to/uvx
+SERVICE_ACCOUNT_PATH=/path/to/service-account-key.json
+DRIVE_FOLDER_ID=your_shared_folder_id_here
+
+# Heurist Mesh MCP settings
+HEURIST_MESH_MCP_URL=your_heurist_mesh_mcp_url
+```
+
 ### Heurist Mesh MCP Setup
 
 1. Visit [Heurist Mesh MCP platform](https://mcp.heurist.ai/)
@@ -92,24 +118,6 @@ This project leverages two Model Context Protocol (MCP) servers:
    - Note the folder's ID from its URL: `https://drive.google.com/drive/folders/FOLDER_ID_HERE`
    - Share it with the service account email address (found in the JSON file)
    - Give it "Editor" access
-
-### Environment Variables
-
-Create a `.env` file with the following variables:
-
-```
-# Google Gemini API settings
-GOOGLE_GENAI_USE_VERTEXAI=FALSE
-GOOGLE_API_KEY=your_gemini_api_key_here
-
-# Google Sheets MCP Server settings
-UVX_PATH=/path/to/uvx
-SERVICE_ACCOUNT_PATH=/path/to/service-account-key.json
-DRIVE_FOLDER_ID=your_shared_folder_id_here
-
-# Heurist Mesh MCP settings
-HEURIST_MESH_MCP_URL=your_heurist_mesh_mcp_url
-```
 
 ## Project Structure
 
