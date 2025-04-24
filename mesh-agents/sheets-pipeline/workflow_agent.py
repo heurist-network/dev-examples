@@ -135,7 +135,7 @@ async def get_tools_async():
                     tools2, stack2 = await MCPToolset.from_server(
                         connection_params=StdioServerParameters(
                             command=uvx_path,
-                            args=["run", "/Users/frankhe/miniconda3/bin/mcp-google-sheets"],
+                            args=["mcp-google-sheets"],
                             env={
                                 "SERVICE_ACCOUNT_PATH": service_account_path,
                                 "DRIVE_FOLDER_ID": drive_folder_id

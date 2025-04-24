@@ -17,7 +17,6 @@ A data assistant built with Google's Agent Development Kit (ADK) that integrates
 - Google Cloud account with Google Sheets API and Google Drive API enabled
 - Service account with Google Sheets access
 - Heurist API key for accessing Heurist Mesh MCP platform
-- MCP tools client ([mcp-proxy](https://github.com/sparfenyuk/mcp-proxy))
 - UV package manager for Python (`uvx`)
 
 ## MCP Server Integration
@@ -55,19 +54,7 @@ This project leverages two Model Context Protocol (MCP) servers:
    pip install -r requirements.txt
    ```
 
-3. Install the MCP proxy client:
-   ```
-   # Option 1: With uv (recommended)
-   uv tool install mcp-proxy
-
-   # Option 2: With pipx (alternative)
-   pipx install mcp-proxy
-
-   # Option 3: Latest version from GitHub
-   uv tool install git+https://github.com/sparfenyuk/mcp-proxy
-   ```
-
-4. Install UV package manager:
+3. Install UV package manager:
    ```
    curl -sSf https://install.ultraviolet.dev | sh
    ```
@@ -133,7 +120,7 @@ python workflow_agent.py
 ```
 
 You can ask questions like:
-- "Find me the trending tokens on CoinGecko today. No need to confirm—just save their symbol, current price (USD) by create a new spreadsheet‘CoinGecko Dashboard’, sheet 'Trending', if the spreadsheet not exist."
+- "Find me the trending tokens on CoinGecko today. No need to confirm—just save their symbol, current price (USD) by create a new spreadsheet'CoinGecko Dashboard', sheet 'Trending', if the spreadsheet not exist."
 - "Get every tweet posted by @elonmusk. No need to confirm—just create a new spreadsheet titled 'elonmusk‑tweets‑2025‑04‑21' with a sheet named 'elonmusk', and write these columns for each tweet: timestamp, text"
 
 ## Heurist Mesh MCP Integration
