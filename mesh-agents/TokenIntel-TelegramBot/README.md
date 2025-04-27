@@ -1,6 +1,6 @@
-# Telegram Group Agents
+# TokenIntel-TelegramBot
 
-A Python-based Telegram bot that leverages various intelligent agents through the Heurist API to perform web searches, social media analysis, and blockchain data analysis.
+A Python-based Telegram bot for crypto and web3 intelligence that leverages various specialized agents through the Heurist API to perform token analysis, web searches, social media analysis, and blockchain data analysis.
 
 ## Features
 

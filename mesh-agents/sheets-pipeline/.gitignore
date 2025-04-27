@@ -1,0 +1,6 @@
+# Ignore all files in the credentials directory
+*credentials.json
+
+# Ignore all files in the .env directory
+.env/*
+
