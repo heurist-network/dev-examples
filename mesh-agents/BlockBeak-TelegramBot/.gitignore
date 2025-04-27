@@ -1,9 +1,6 @@
 # Environment variables
 .env
 
-# Credentials
-credentials.json
-
 # Python
 __pycache__/
 *.py[cod]
@@ -26,22 +23,22 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-.venv/
-venv/
-ENV/
+# Logs
+*.log
+agent_trace.jsonl
 
-# IDE specific files
+# IDE
 .idea/
 .vscode/
 *.swp
-*.swo
-.DS_Store
+*.swo 
 
-# Logs
-*.log
+.venv/
 
-# Local development
-.python-version
-.env.local
-.env.*.local 
+# bak files 
+*.bak
+*.bak2
+*.bak3
+*.bak4
+*.bak5
+*.bak6

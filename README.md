@@ -1,63 +1,134 @@
 # Heurist Integration Examples
 
-### Supported Models:
-The following open source models are supported. View the public model list [Supported Models](https://docs.heurist.ai/dev-guide/supported-models)
-You can use the following model name as model_id in Heurist API/SDK.
+This repository contains reference implementations to help developers integrate with Heurist AI services, including LLM, embedding, image generation, and using Heurist Mesh Agents.
 
-For API Key please [Click Here](https://dev-api-form.heurist.ai/)
+## Getting Started with Heurist API
 
-Heurist Official Documentation : [Click Here](https://docs.heurist.ai/introduction)
+### Obtaining Your API Key
+**All examples in this repository require a Heurist API key.**
 
-## Mesh Agent
+1. Create an API key by purchasing credits with crypto at [Credits and API Management Portal](https://heurist.ai/credits)
+2. You can also apply for free trial credits using the [form](https://dev-api-form.heurist.ai/)
+3. Use this key in all examples by setting it as an environment variable or directly in the code
 
-The `telegram_group_agents` example demonstrates how to integrate multiple Heurist Mesh Agents into a Telegram bot. This example showcases:
+### Prerequisites
+- Node.js (for JavaScript examples)
+- Python 3.8+ (for Python examples)
+- Heurist API Key (from steps above)
 
-### Supported Agents:
-- **ExaSearchAgent**: Web search and question answering
-- **ElfaTwitterIntelligenceAgent**: Twitter analysis and trending token tracking
-- **FirecrawlSearchAgent**: Advanced web search and data extraction
-- **SolWalletAgent**: Blockchain wallet analysis
-- **TwitterInsightAgent**: Twitter follower history and mentions tracking
+### Installation
 
+#### For JavaScript Examples
+```bash
+# Install dependencies for all JavaScript examples
+npm install
+```
 
-Check out the complete example in the [python/telegram_group_agents](python/telegram_group_agents) directory.
+#### For Python Examples
+```bash
+# Create a virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
+# Install core dependencies for basic examples
+pip install -r requirements.txt
 
-## Image Generation
+# For specific advanced examples, install their additional dependencies:
+# TokenIntel-TelegramBot
+pip install -r mesh-agents/TokenIntel-TelegramBot/requirements.txt
 
-[Image Generation Docs](https://docs.heurist.ai/dev-guide/image-generation/introduction)
+# Google Sheets Data Pipeline
+pip install -r mesh-agents/sheets-pipeline/requirements.txt
+```
 
-For **SD (Stable Diffusion) image generation**, you can integrate using the **http://sequencer.heurist.xyz/submit_job** endpoint. This integration allows you to submit image generation jobs by specifying parameters such as **prompt**, **negative prompt**, **guidance scale**, **seed**, **num_iterations**, **width**, **height**, and **model_id**.
+## Repository Structure
 
+This repository is organized by functionality:
 
-### Python Example Code:
-- **generate_image_rest_api.py**: Demonstrates how to use the **REST API** to submit an image generation job to the **Sequencer** endpoint.
-- **smartgen.py**: Demonstrates using **smartgen** for generative tasks in a Python environment.
+```
+dev-examples/
+├── basic/              # Basic integration examples
+│   ├── llm/            # LLM examples (both JS and Python)
+│   ├── embeddings/     # Embedding examples (both JS and Python)
+│   └── image/          # Image generation examples (both JS and Python)
+│
+├── mesh-agents/        # Advanced Mesh Agent examples
+│   ├── BlockBeak-TelegramBot/   # AI-powered Smart Telegram bot
+│   ├── TokenIntel-TelegramBot/   # Crypto and web3 intelligence Telegram bot
+│   └── sheets-pipeline/ # Google Sheets data pipeline
+```
 
-### JavaScript Example Code:
-- **generate_image_heurist_sdk.js**: Demonstrates using the **Heurist SDK** for image generation using the **REST API**.
-- **generate_image_rest_api.py**: Demonstrates how to use the **REST API** to submit an image generation job to the **Sequencer** endpoint.
-- **smartgen.js**: Demonstrates using **smartgen** for generative tasks in a JavaScript environment.
+## Basic Generative AI Integration Examples
 
-To generate images using the Heurist platform, you can either use the **REST API** or the **HEURIST SDK**.
+### LLM Integration
+[`basic/llm/`](basic/llm/) - Access Large Language Models through Heurist's LLM Gateway.
 
-## LLM Integration
+Examples in both JavaScript and Python for:
+- OpenAI SDK integration
+- REST API integration
+- Tool/function calling with Hermes Llama-3.1
 
-[LLM Gateway Docs](https://docs.heurist.ai/dev-guide/llm-gateway/introduction)
+[LLM Gateway Documentation](https://docs.heurist.ai/dev-guide/llm-gateway/introduction)
 
-For **LLM (Large Language Models)**, you can integrate using the **LLM Gateway**. This integration allows you to access and interact with various models, including using both the OpenAI SDK and the custom tool-calling features.
+### Embedding Generation
+[`basic/embeddings/`](basic/embeddings/) - Generate embeddings for semantic search and text analysis.
 
-### Python Example Code:
-- **llm_openai_sdk.py**: Demonstrates how to use the **OpenAI SDK** to generate text via the **LLM Gateway**, supporting both streaming and non-streaming modes.
-- **llm_rest_api.py**: Demonstrates how to use the **REST API** to communicate with the **LLM Gateway** to generate text.
-- **embedding_example.py**: Demonstrates how to use the **OpenAI SDK** to generate embeddings via the **LLM Gateway**.
-- **tool-calling.py**: This example uses the Hermes Llama-3.1 model finetuned with tool-calling capabilities.
+Examples in both JavaScript and Python for:
+- OpenAI-compatible embeddings generation
 
+### Image Generation
+[`basic/image/`](basic/image/) - Generate images using Stable Diffusion models.
 
+Examples in both JavaScript and Python for:
+- REST API integration
+- Heurist SDK integration (JavaScript)
+- SmartGen for enhanced generation
 
+[Image Generation Documentation](https://docs.heurist.ai/dev-guide/image-generation/introduction)
 
-### JavaScript Example Code:
-- **llm_openai_sdk.js**: Demonstrates how to use the **OpenAI SDK** to interact with the **LLM Gateway**.
-- **llm_rest_api.js**: Demonstrates how to use the **REST API** to communicate with the **LLM Gateway**.
-- **embedding_example.js**: Demonstrates how to generate embeddings using the **OpenAI SDK** with the **LLM Gateway**.
-- **tool-calling.js**: This example uses the Hermes Llama-3.1 model finetuned with tool-calling capabilities.
+## Heurist Mesh Agents
+
+[`mesh-agents/`](mesh-agents/) - Specialized AI agents that provide domain-specific capabilities through API and MCP (Model Context Protocol).
+
+### TokenIntel-TelegramBot
+[`mesh-agents/TokenIntel-TelegramBot/`](mesh-agents/TokenIntel-TelegramBot/) - Integrates multiple specialized agents into a Telegram bot for crypto and web3 intelligence:
+
+- ExaSearchAgent (web search)
+- ElfaTwitterIntelligenceAgent (Twitter analysis)
+- FirecrawlSearchAgent (advanced web search)
+- SolWalletAgent (blockchain wallet analysis)
+
+### Google Sheets Data Pipeline
+[`mesh-agents/sheets-pipeline/`](mesh-agents/sheets-pipeline/) - Data pipeline that:
+
+- Fetches cryptocurrency and financial data
+- Uses Google's Agent Development Kit (ADK)
+- Connects to multiple MCP servers
+- Automatically populates Google Sheets
+
+### BlockBeak-TelegramBot
+[`mesh-agents/BlockBeak-TelegramBot/`](mesh-agents/BlockBeak-TelegramBot/) - AI-powered smart Telegram bot that:
+
+- Interfaces with specialized Heurist Mesh agents
+- Supports both CLI and Telegram interfaces
+- Uses MCP (Model Control Protocol) for agent connectivity
+- Provides smart analysis on crypto market and information services
+
+## Creating Your Own Mesh Agent Applications
+
+To build with Heurist Mesh Agents:
+
+1. Get a Heurist API Key from [the developer portal](https://dev-api-form.heurist.ai/)
+2. Visit the [Heurist Mesh MCP platform](https://mcp.heurist.ai/)
+3. Select your desired specialized agents
+4. Create your dedicated MCP server
+5. Use the MCP server URL in your application
+6. Follow the examples in this repository
+
+## Resources
+
+- [Heurist Official Documentation](https://docs.heurist.ai/introduction)
+- [Supported Models](https://docs.heurist.ai/dev-guide/supported-models)
+- [Mesh MCP Server Repository](https://github.com/heurist-network/heurist-mesh-mcp-server)
+- [Mesh Agents Repository](https://github.com/heurist-network/heurist-agent-framework/tree/main/mesh)
+- [Create Your Own MCP Server](https://github.com/heurist-network/heurist-agent-framework/tree/main/mesh)
