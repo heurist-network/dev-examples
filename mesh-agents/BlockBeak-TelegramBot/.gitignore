@@ -42,3 +42,7 @@ agent_trace.jsonl
 *.bak4
 *.bak5
 *.bak6
+
+
+# data 
+data/

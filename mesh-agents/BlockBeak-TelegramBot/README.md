@@ -142,8 +142,43 @@ The Telegram bot supports the following commands:
 - `/model` - Show current model settings
 - `/stats` - Show conversation statistics
 - `/ask [question]` - Ask a question to the AI assistant
+- `/subscribe "query" [hours]` - Subscribe to a recurring query
+- `/unsubscribe id` - Remove a subscription
+- `/subscriptions` - List all your active subscriptions
+- `/save_query name "query"` - Save a query for later use
+- `/saved_queries` - List all your saved queries
+- `/subscribe_saved name [hours]` - Subscribe to a previously saved query
 
-The bot primarily responds to the `/ask` command, such as `/ask What's the weather like today?`.
+The bot primarily responds to the `/ask` command, such as `/ask What's the weather like today?`. You can also set up recurring queries with the `/subscribe` command.
+
+### Subscription Feature
+
+The subscription feature allows you to schedule recurring queries that run automatically at specified intervals. For example:
+
+- `/subscribe "analyze token 0x1234abcd" 12` - Analyzes the token every 12 hours
+- `/subscribe "check @elonmusk recent tweets" 4` - Checks for new tweets every 4 hours
+- `/subscribe "monitor ETH gas prices" 6` - Monitors gas prices every 6 hours
+
+When a scheduled query runs, the bot will:
+1. Send a notification that it's running your query
+2. Process the query through the AI assistant
+3. Send you the results
+4. Schedule the next run based on your frequency setting
+
+To manage your subscriptions:
+- Use `/subscriptions` to see all your active subscriptions
+- Use `/unsubscribe id` to remove a subscription (where `id` is the subscription ID)
+
+### Saved Queries
+
+You can save frequently used queries for easy reuse:
+
+- `/save_query eth_price "check current ethereum price and market cap"`
+- `/save_query btc_news "summarize the latest bitcoin news"`
+
+To use your saved queries:
+- View them with `/saved_queries`
+- Subscribe to them with `/subscribe_saved eth_price 12`
 
 # OpenAI Agent with Telegram Bot
 
