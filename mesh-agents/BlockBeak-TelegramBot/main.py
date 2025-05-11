@@ -1,40 +1,54 @@
 #!/usr/bin/env python3
-
-import os
 import sys
 import argparse
-import asyncio
+import logging
 from src.config.settings import Settings  # Import Settings instead of dotenv
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # Log to stdout for easier debugging
+    ]
+)
+logger = logging.getLogger(__name__)
 
 def main():
     """Main entry point for the application."""
+    logger.info("Starting BlockBeak Telegram Bot application")
+    
+    # Parse command line arguments
     parser = argparse.ArgumentParser(description="OpenAI Agent with MCP Server")
-    parser.add_argument("--no-stream", action="store_true", help="Use non-streaming mode for CLI")
-    parser.add_argument("--model", type=str, help="OpenAI model to use")
-    parser.add_argument("--temperature", type=float, help="Model temperature")
-    parser.add_argument("--max-tokens", type=int, help="Maximum tokens")
-    parser.add_argument("--telegram", action="store_true", help="Run as a Telegram bot")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
     
+    # Set debug logging if requested
+    if args.debug:
+        logger.info("Debug logging enabled")
+        logging.getLogger().setLevel(logging.DEBUG)
+    
     # Initialize settings singleton (loads environment variables)
-    settings = Settings()
+    logger.info("Initializing settings")
+    try:
+        settings = Settings()
+        logger.info(f"Settings initialized with MCP proxy URL: {settings.mcp_proxy_url}")
+    except Exception as e:
+        logger.error(f"Error initializing settings: {str(e)}", exc_info=True)
+        sys.exit(1)
     
-    # Prepare agent kwargs from command line arguments
-    agent_kwargs = {}
-    if args.model:
-        agent_kwargs['model'] = args.model
-    if args.temperature is not None:
-        agent_kwargs['temperature'] = args.temperature
-    if args.max_tokens is not None:
-        agent_kwargs['max_tokens'] = args.max_tokens
-    
-    # Choose interface based on arguments
-    if args.telegram:
+    # Always start the Telegram bot interface
+    logger.info("Starting Telegram bot interface")
+    try:
         from src.interfaces.telegram.bot import main as telegram_main
         telegram_main()
-    else:
-        from src.interfaces.cli.terminal import main as cli_main
-        cli_main(streaming=not args.no_stream, **agent_kwargs)
+    except Exception as e:
+        logger.error(f"Error starting Telegram bot: {str(e)}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    try:
+        main()
+    except Exception as e:
+        logger.critical(f"Unhandled exception in main: {str(e)}", exc_info=True)
+        sys.exit(1) 
