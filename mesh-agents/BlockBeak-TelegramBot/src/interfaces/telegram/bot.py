@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-import os
 import logging
+import asyncio
 import telebot
-from dotenv import load_dotenv
 from src.core.agent import AgentManager
 from src.config.settings import Settings
 
@@ -43,10 +42,8 @@ class TelegramBotHandler:
     def setup_commands(self):
         """Set up bot commands that will show up in the Telegram UI"""
         commands = [
-            telebot.types.BotCommand("start", "Start the conversation"),
             telebot.types.BotCommand("help", "Show help message"),
             telebot.types.BotCommand("model", "Show current AI model settings"),
-            telebot.types.BotCommand("stats", "Show your usage statistics"),
             telebot.types.BotCommand("ask", "Ask me a question")
         ]
         self.bot.set_my_commands(commands)
@@ -55,21 +52,33 @@ class TelegramBotHandler:
         """Check if the message is from an authorized chat"""
         # If chat_id is None, don't authorize any chats
         if self.chat_id is None:
-            logger.info(f"No authorized chat IDs configured")
+            logger.info("No authorized chat IDs configured")
             return False
         
         msg_chat_id = int(message.chat.id)
-        # Debug the types and values
-        logger.info(f"Authorization check - Message chat_id: {msg_chat_id} (type: {type(msg_chat_id)})")
-        logger.info(f"Authorization check - Allowed chat_ids: {self.chat_id} (type: {type(self.chat_id)})")
-        
-        # Check each chat ID individually for debugging
-        for allowed_id in self.chat_id:
-            logger.info(f"Comparing {msg_chat_id} with allowed ID {allowed_id} (type: {type(allowed_id)}): {msg_chat_id == allowed_id}")
+        # Debug: Log the chat ID comparison details
+        logger.info(f"AUTH CHECK: Message chat_id: {msg_chat_id}, Authorized IDs: {self.chat_id}")
+        logger.info(f"AUTH CHECK: Type of message chat_id: {type(msg_chat_id)}")
+        logger.info(f"AUTH CHECK: Types in authorized list: {[type(id) for id in self.chat_id]}")
         
         is_authorized = msg_chat_id in self.chat_id
-        logger.info(f"Final authorization result for chat {msg_chat_id}: {is_authorized}")
+        
+        logger.info(f"AUTH CHECK: Is authorized: {is_authorized}")
+        
+        if not is_authorized:
+            logger.warning(f"Unauthorized chat {msg_chat_id} attempted access")
+            
         return is_authorized
+    
+    def get_or_create_user_session(self, user_id, first_name, username):
+        """Get or create a user session, centralizing the initialization logic"""
+        if user_id not in self.active_users:
+            self.active_users[user_id] = {
+                "name": first_name,
+                "username": username,
+                "history": []
+            }
+        return self.active_users[user_id]
     
     def extract_entities(self, message):
         """Extract entities (like hyperlinks) from a message and format them for better processing"""
@@ -123,200 +132,26 @@ class TelegramBotHandler:
             
         return command
     
-    def handle_command(self, message, command_text):
-        """Generic handler for commands, including those with bot username"""
-        # Extract the base command (remove bot username if present)
-        command = self.extract_command(command_text)
-        if not command:
-            return False  # Not a command
-            
-        # Remove the leading slash
-        command = command[1:] if command.startswith('/') else command
-        
-        # Handle each command
-        if command == 'start':
-            self.handle_start_command(message)
-            return True
-        elif command == 'help':
-            self.handle_help_command(message)
-            return True
-        elif command == 'model':
-            self.handle_model_command(message)
-            return True
-        elif command == 'stats':
-            self.handle_stats_command(message)
-            return True
-        elif command == 'ask':
-            self.handle_ask_command(message)
-            return True
-            
-        return False  # Command not recognized
-        
-    def handle_start_command(self, message):
-        """Handle the /start command"""
-        if not self.is_authorized_chat(message):
-            logger.warning(f"Unauthorized chat {message.chat.id} tried to use /start command")
-            return
-            
-        user_id = message.from_user.id
-        chat_id = message.chat.id
-        
-        # Initialize user session if not exists
-        if user_id not in self.active_users:
-            self.active_users[user_id] = {
-                "name": message.from_user.first_name,
-                "username": message.from_user.username,
-                "history": []
-            }
-        
-        self.bot.reply_to(
-            message, 
-            f"Hello {message.from_user.first_name}! I'm an AI assistant powered by OpenAI.\n"
-            f"Use /ask followed by your question to interact with me.\n"
-            f"Type /help to see all available commands."
-        )
-        
-    def handle_help_command(self, message):
-        """Handle the /help command"""
-        if not self.is_authorized_chat(message):
-            logger.warning(f"Unauthorized chat {message.chat.id} tried to use /help command")
-            return
-            
-        self.bot.reply_to(
-            message,
-            "Here are the available commands:\n"
-            "/start - Start the conversation\n"
-            "/help - Show this help message\n"
-            "/model - Show the current AI model\n"
-            "/stats - Show your usage statistics\n"
-            "/ask - Ask me a question (e.g., /ask What's the weather like?)"
-        )
-        
-    def handle_model_command(self, message):
-        """Handle the /model command"""
-        if not self.is_authorized_chat(message):
-            logger.warning(f"Unauthorized chat {message.chat.id} tried to use /model command")
-            return
-            
-        self.bot.reply_to(
-            message,
-            f"Current model: {self.agent_config['model']}\n"
-            f"Temperature: {self.agent_config['temperature']}\n"
-            f"Max tokens: {self.agent_config['max_tokens']}"
-        )
-        
-    def handle_stats_command(self, message):
-        """Handle the /stats command"""
-        if not self.is_authorized_chat(message):
-            logger.warning(f"Unauthorized chat {message.chat.id} tried to use /stats command")
-            return
-            
-        user_id = message.from_user.id
-        
-        if user_id in self.active_users:
-            user_data = self.active_users[user_id]
-            message_count = len(user_data["history"])
-            self.bot.reply_to(
-                message,
-                f"Your statistics:\n"
-                f"Messages sent: {message_count}"
-            )
-        else:
-            self.bot.reply_to(
-                message,
-                "No statistics available. Start a conversation first with /ask."
-            )
-            
-    def handle_ask_command(self, message):
-        """Handle the /ask command"""
-        if not self.is_authorized_chat(message):
-            logger.warning(f"Unauthorized chat {message.chat.id} tried to use /ask command")
-            return
-            
-        user_id = message.from_user.id
-        
-        # Initialize user session if not exists
-        if user_id not in self.active_users:
-            self.active_users[user_id] = {
-                "name": message.from_user.first_name,
-                "username": message.from_user.username,
-                "history": []
-            }
-        
-        # Extract the question from the message (remove /ask)
-        if ' ' in message.text:
-            question = message.text.split(' ', 1)[1]
-        else:
-            self.bot.reply_to(message, "Please provide a question after /ask")
-            return
-        
-        # Process the question
-        self.process_message(message, question)
-    
     def register_handlers(self):
         """Register message handlers"""
-        # Debug handler to log all incoming messages
-        @self.bot.message_handler(func=lambda message: True, content_types=['text'])
-        def debug_handler(message):
-            try:
-                logger.info(f"Received message '{message.text}' in chat {message.chat.id} ({message.chat.type}) from {message.from_user.username or message.from_user.id}")
-                
-                # Try to handle as a command if it starts with /
-                if message.text and message.text.startswith('/'):
-                    if self.handle_command(message, message.text):
-                        return
-                    
-            except Exception as e:
-                logger.error(f"Error in debug_handler: {str(e)}", exc_info=True)
-                
-            # Let other handlers process the message
-            pass
-            
-        @self.bot.message_handler(commands=['start'])
-        def start_command(message):
-            logger.info(f"Received /start command in chat {message.chat.id}")
-            if not self.is_authorized_chat(message):
-                logger.warning(f"Unauthorized chat {message.chat.id} tried to use /start command")
-                return
-                
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            # Initialize user session if not exists
-            if user_id not in self.active_users:
-                self.active_users[user_id] = {
-                    "name": message.from_user.first_name,
-                    "username": message.from_user.username,
-                    "history": []
-                }
-            
-            self.bot.reply_to(
-                message, 
-                f"Hello {message.from_user.first_name}! I'm an AI assistant powered by OpenAI.\n"
-                f"Use /ask followed by your question to interact with me.\n"
-                f"Type /help to see all available commands."
-            )
+
         
         @self.bot.message_handler(commands=['help'])
         def help_command(message):
             if not self.is_authorized_chat(message):
-                logger.warning(f"Unauthorized chat {message.chat.id} tried to use /help command")
                 return
                 
             self.bot.reply_to(
                 message,
                 "Here are the available commands:\n"
-                "/start - Start the conversation\n"
                 "/help - Show this help message\n"
                 "/model - Show the current AI model\n"
-                "/stats - Show your usage statistics\n"
                 "/ask - Ask me a question (e.g., /ask What's the weather like?)"
             )
         
         @self.bot.message_handler(commands=['model'])
         def model_command(message):
             if not self.is_authorized_chat(message):
-                logger.warning(f"Unauthorized chat {message.chat.id} tried to use /model command")
                 return
                 
             self.bot.reply_to(
@@ -326,57 +161,54 @@ class TelegramBotHandler:
                 f"Max tokens: {self.agent_config['max_tokens']}"
             )
         
-        @self.bot.message_handler(commands=['stats'])
-        def stats_command(message):
-            if not self.is_authorized_chat(message):
-                logger.warning(f"Unauthorized chat {message.chat.id} tried to use /stats command")
-                return
-                
-            user_id = message.from_user.id
-            
-            if user_id in self.active_users:
-                user_data = self.active_users[user_id]
-                message_count = len(user_data["history"])
-                self.bot.reply_to(
-                    message,
-                    f"Your statistics:\n"
-                    f"Messages sent: {message_count}"
-                )
-            else:
-                self.bot.reply_to(
-                    message,
-                    "No statistics available. Start a conversation first with /ask."
-                )
-
         @self.bot.message_handler(commands=['ask'])
         def ask_command(message):
+            logger.info(f"Received /ask command in chat {message.chat.id}")
             if not self.is_authorized_chat(message):
-                logger.warning(f"Unauthorized chat {message.chat.id} tried to use /ask command")
+                logger.warning(f"Unauthorized chat {message.chat.id} attempted to use /ask command")
                 return
-                
-            user_id = message.from_user.id
             
-            # Initialize user session if not exists
-            if user_id not in self.active_users:
-                self.active_users[user_id] = {
-                    "name": message.from_user.first_name,
-                    "username": message.from_user.username,
-                    "history": []
-                }
+            logger.info(f"Authorization passed for /ask command in chat {message.chat.id}")    
+            user_id = message.from_user.id
+            logger.info(f"Processing /ask command from user {message.from_user.username or user_id}")
+            
+            # Initialize or get user session
+            self.get_or_create_user_session(
+                user_id, 
+                message.from_user.first_name, 
+                message.from_user.username
+            )
             
             # Extract the question from the message (remove /ask)
             if ' ' in message.text:
                 question = message.text.split(' ', 1)[1]
+                logger.info(f"Question extracted: '{question}'")
             else:
+                logger.warning("Empty question in /ask command")
                 self.bot.reply_to(message, "Please provide a question after /ask")
                 return
             
             # Process the question
-            self.process_message(message, question)
+            try:
+                logger.debug("Calling process_message with question")
+                self.process_message(message, question)
+            except Exception as e:
+                logger.error(f"Error in ask_command handler: {str(e)}", exc_info=True)
+                try:
+                    self.bot.reply_to(message, "Sorry, there was an error processing your question. Please try again.")
+                except Exception as send_error:
+                    logger.error(f"Failed to send error reply: {send_error}")
     
     def process_message(self, message, question_text):
         """Process user messages through the agent manager"""
+        logger.info(f"Processing message for user {message.from_user.username or message.from_user.id}, text: '{question_text[:50]}...'")
+        
+        # Special debug for cryptocurrency queries
+        if "$" in question_text or "price" in question_text.lower():
+            logger.info(f"Detected cryptocurrency query: '{question_text}'")
+        
         # Reload environment variables before each request using Settings singleton
+        logger.info("Reloading settings")
         self.settings = Settings.reload()
         
         user_id = message.from_user.id
@@ -384,32 +216,62 @@ class TelegramBotHandler:
         # Process entities if present in the original message
         if hasattr(message, 'entities') and message.entities:
             question_text = self.extract_entities(message)
+            logger.debug(f"Processed entities, resulting text: '{question_text[:50]}...'")
         
         # Store the question in history
         self.active_users[user_id]["history"].append({"role": "user", "content": question_text})
         
         # Reinitialize agent manager with fresh settings
         self.agent_config = self.settings.get_agent_config()
+        logger.info(f"Agent config: model={self.agent_config.get('model')}, temperature={self.agent_config.get('temperature')}")
         self.agent_manager = AgentManager(**self.agent_config)
         
         # Send "typing" action
+        logger.info(f"Sending typing action to chat {message.chat.id}")
         self.bot.send_chat_action(message.chat.id, 'typing')
+        logger.debug("Sent 'typing' action")
         
         try:
             # Show a waiting message
+            logger.info("Sending waiting message")
             waiting_msg = self.bot.reply_to(message, "Processing your request...")
+            logger.info(f"Sent waiting message with ID: {waiting_msg.message_id}")
             
+            logger.info(f"Starting agent.process_message_robust call for: '{question_text}'")
             # Process message through agent (async call in a sync context)
-            import asyncio
             # Use robust message processing with retries and fallbacks
-            response = asyncio.run(self.agent_manager.process_message_robust(
-                message=question_text,
-                streaming=False  # Non-streaming mode
-            ))
+            try:
+                logger.info("Creating asyncio task for agent processing")
+                
+                # Get or create an event loop for the current thread
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    logger.info("No current event loop found, creating a new one.")
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                # Add timeout handling to detect if it's simply taking too long
+                start_time = loop.time()
+                response = loop.run_until_complete(self.agent_manager.process_message_robust(
+                    message=question_text,
+                    streaming=False  # Non-streaming mode
+                ))
+                elapsed_time = loop.time() - start_time
+                logger.info(f"Agent processing completed in {elapsed_time:.2f} seconds")
+                logger.info(f"Agent returned response of length: {len(response)}")
+            except asyncio.TimeoutError:
+                logger.error("Agent processing timed out")
+                raise
+            except Exception as e:
+                logger.error(f"Exception during agent.process_message_robust: {str(e)}", exc_info=True)
+                raise
             
             # Remove trace URL from the response if present
             if "View trace:" in response:
                 parts = response.split("\n\n", 1)
+                trace_url = parts[0] if len(parts) > 0 else ""
+                logger.debug(f"Trace URL: {trace_url}")
                 # Keep only the actual response part
                 response = parts[1] if len(parts) > 1 else ""
             
@@ -417,53 +279,79 @@ class TelegramBotHandler:
             self.active_users[user_id]["history"].append({"role": "assistant", "content": response})
             
             # Delete waiting message and send response
-            self.bot.delete_message(message.chat.id, waiting_msg.message_id)
-            self.bot.reply_to(message, response)
+            try:
+                logger.debug(f"Deleting waiting message: {waiting_msg.message_id}")
+                self.bot.delete_message(message.chat.id, waiting_msg.message_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete waiting message: {e}")
+            
+            logger.debug(f"Sending final response of length: {len(response)}")
+            try:
+                # Log first part of the response to debug
+                logger.debug(f"Response preview: {response[:100]}...")
+                result = self.bot.reply_to(message, response)
+                logger.info(f"Successfully sent response with message ID: {result.message_id}")
+            except Exception as e:
+                logger.error(f"Exception while sending response: {str(e)}", exc_info=True)
+                # Try sending a simpler message
+                self.bot.reply_to(message, "I encountered an error while sending my response. Please try again.")
             
         except Exception as e:
+            logger.error(f"Exception in process_message: {type(e).__name__}: {str(e)}", exc_info=True)
             error_message = str(e)
             error_details = getattr(e, 'details', None)
             
             if error_details:
+                logger.error(f"Error details: {error_details}")
                 if error_details.get('type') == 'OpenAIError':
                     error_message = (
                         f"OpenAI API Error:\n"
                         f"Message: {error_details.get('message')}\n"
                         f"Request ID: {error_details.get('request_id')}\n"
-                        f"Status Code: {error_details.get('status_code')}"
                     )
-                else:
-                    error_message = (
-                        f"Error Type: {error_details.get('type')}\n"
-                        f"Message: {error_details.get('message')}"
-                    )
-            
-            logger.error(f"Error processing message: {error_message}", exc_info=True)
-            
+                    
+            # Attempt to send error message
             try:
-                # Try to delete the waiting message if it exists
-                self.bot.delete_message(message.chat.id, waiting_msg.message_id)
-            except:
-                pass
-            
-            self.bot.reply_to(
-                message,
-                f"Sorry, there was an error processing your request:\n\n{error_message}\n\n"
-                "You can try:\n"
-                "1. Rephrasing your question\n"
-                "2. Waiting a few moments and trying again\n"
-                "3. Using /model to check current settings"
-            )
+                self.bot.reply_to(message, f"Sorry, an error occurred: {error_message[:200]}")
+            except Exception as send_error:
+                logger.error(f"Could not send error message: {send_error}")
     
     def run(self):
         """Run the Telegram bot."""
         logger.info("Starting Telegram bot using pyTelegramBotAPI in non-streaming mode")
+        
+        # Debug: Check event loop status before starting polling
+        try:
+            logger.info("Checking asyncio event loop...")
+            loop = asyncio.get_event_loop()
+            logger.info(f"Event loop: {loop}, running: {loop.is_running()}")
+        except Exception as e:
+            logger.error(f"Error checking event loop: {e}")
+        
         self.bot.infinity_polling()
 
 def main():
     """Entry point for the Telegram interface."""
+    logger.info("Telegram bot main function called")
     try:
+        # Check environment variables
+        from src.config.settings import Settings
+        settings = Settings(force_reload=True)
+        
+        # Get agent config to access model information
+        agent_config = settings.get_agent_config()
+        
+        # Log configuration details
+        logger.info("Telegram bot configuration:")
+        logger.info(f"Bot token present: {bool(settings.telegram_token)}")
+        logger.info(f"Authorized chat IDs: {settings.telegram_chat_id}")
+        logger.info(f"Agent model: {agent_config.get('model', 'unknown')}")
+        
         bot_handler = TelegramBotHandler()
+        logger.info("TelegramBotHandler created successfully")
+        
+        # Run the bot
+        logger.info("Starting bot polling...")
         bot_handler.run()
     except ValueError as e:
         logger.error(f"Configuration error: {e}")
