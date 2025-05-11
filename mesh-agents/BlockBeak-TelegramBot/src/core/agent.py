@@ -277,7 +277,8 @@ class AgentManager:
                         "args": [self.mcp_proxy_url],
                     },
                     # Enable tools caching per the OpenAI SDK documentation
-                    cache_tools_list=self.enable_mcp_cache
+                    cache_tools_list=self.enable_mcp_cache,
+                    client_session_timeout_seconds=60  # <-- Increase this timeout (e.g., to 60 seconds)
                 )
                 
                 # Create the agent with model settings
