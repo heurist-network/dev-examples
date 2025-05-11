@@ -1,3 +1,0 @@
-python-dotenv==1.0.0
-pyTelegramBotAPI>=4.14.0
-openai-agents
