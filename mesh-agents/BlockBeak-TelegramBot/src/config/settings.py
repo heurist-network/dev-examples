@@ -65,14 +65,11 @@ class Settings:
         self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "500000"))
         
-        # MCP Proxy settings - verify and load required settings
-        if not os.getenv("MCP_PROXY_COMMAND"):
-            raise ValueError("MCP_PROXY_COMMAND not found in environment variables. Please set it in .env file.")
-        self.mcp_proxy_command = os.getenv("MCP_PROXY_COMMAND")
+
         
-        if not os.getenv("MCP_PROXY_URL"):
-            raise ValueError("MCP_PROXY_URL not found in environment variables. Please set it in .env file.")
-        self.mcp_proxy_url = os.getenv("MCP_PROXY_URL")
+        if not os.getenv("MCP_SSE_URL"):
+            raise ValueError("MCP_SSE_URL not found in environment variables. Please set it in .env file.")
+        self.mcp_sse_url = os.getenv("MCP_SSE_URL")
         
         # Telegram Bot settings
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
