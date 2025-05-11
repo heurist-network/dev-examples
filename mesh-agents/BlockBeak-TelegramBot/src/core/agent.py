@@ -6,7 +6,7 @@ import logging
 from typing import AsyncGenerator, Dict, List, Optional, Union, Callable, Any
 from openai import OpenAI, OpenAIError
 from agents import Agent as OpenAIAgent, Runner, gen_trace_id, trace, ModelSettings
-from agents.mcp import MCPServerStdio
+from agents.mcp import MCPServerStdio, MCPServerSse
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -123,8 +123,7 @@ class AgentManager:
         self.temperature = temperature
         self.max_tokens = max_tokens
         # Always use settings values for MCP proxy
-        self.mcp_proxy_command = settings.mcp_proxy_command
-        self.mcp_proxy_url = settings.mcp_proxy_url
+        self.mcp_sse_url = settings.mcp_sse_url
         self.instructions = instructions
         self.max_retries = max_retries
         self.retry_delay_base = retry_delay_base
@@ -269,12 +268,11 @@ class AgentManager:
                 logger.debug(f"Generated trace ID: {self.trace_id}")
                 
                 # Create MCP server with proper tool caching
-                logger.debug(f"Initializing MCP server with proxy: {self.mcp_proxy_command}")
-                self.mcp_server = MCPServerStdio(
-                    name="MCP Proxy Server",
+                logger.debug(f"Initializing MCP SSE server: {self.mcp_sse_url}")
+                self.mcp_server = MCPServerSse(
+                    name="MCP SSE Server",
                     params={
-                        "command": self.mcp_proxy_command,
-                        "args": [self.mcp_proxy_url],
+                        "url": self.mcp_sse_url
                     },
                     # Enable tools caching per the OpenAI SDK documentation
                     cache_tools_list=self.enable_mcp_cache,

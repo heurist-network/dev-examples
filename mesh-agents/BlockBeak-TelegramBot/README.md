@@ -152,9 +152,8 @@ OPENAI_DEFAULT_MODEL=gpt-4.1-mini
 OPENAI_TEMPERATURE=0.1
 OPENAI_MAX_TOKENS=2000
 
-# MCP Proxy settings
-# MCP_PROXY_COMMAND=/path/to/mcp-proxy # Optional: if you run proxy locally
-MCP_PROXY_URL=YOUR_MCP_SSE_URL_HERE # you can get one from https://mcp.heurist.ai/
+# MCP SSE settings
+MCP_SSE_URL=YOUR_MCP_SSE_URL_HERE # you can get one from https://mcp.heurist.ai/
 
 # Telegram Bot settings
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token

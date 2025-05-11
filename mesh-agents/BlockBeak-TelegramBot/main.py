@@ -32,7 +32,7 @@ def main():
     logger.info("Initializing settings")
     try:
         settings = Settings()
-        logger.info(f"Settings initialized with MCP proxy URL: {settings.mcp_proxy_url}")
+        logger.info(f"Settings initialized with MCP SSE URL: {settings.mcp_sse_url}")
     except Exception as e:
         logger.error(f"Error initializing settings: {str(e)}", exc_info=True)
         sys.exit(1)
