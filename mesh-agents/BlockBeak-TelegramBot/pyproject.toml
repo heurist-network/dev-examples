@@ -9,6 +9,7 @@ dependencies = [
     "python-dotenv==1.0.0",
     "pyTelegramBotAPI>=4.14.0",
     "openai-agents==0.0.14",
+    "pyyaml>=6.0.1",
 ]
 requires-python = ">=3.9"
 
