@@ -3,7 +3,7 @@
 import logging
 import asyncio
 import telebot
-from src.core.agent import AgentManager
+from src.core.agent import create_agent_manager
 from src.config.settings import Settings
 
 # Enable logging
@@ -16,18 +16,20 @@ class TelegramBotHandler:
     def __init__(self):
         # Force reload settings to ensure we have the latest environment variables
         self.settings = Settings(force_reload=True)
-        self.agent_config = self.settings.get_agent_config()
         
-        logger.info(f"TelegramBotHandler initialized with chat IDs: {self.settings.telegram_chat_id}")
+        # Get Telegram-specific config
+        telegram_cfg = self.settings.get_telegram_config()
+        self.token = telegram_cfg["token"]
+        self.chat_id = telegram_cfg["chat_id"]
+        
+        logger.info(f"TelegramBotHandler initialized with chat IDs: {self.chat_id}")
         
         if not self.settings.is_telegram_configured():
             raise ValueError("Telegram bot token or chat ID not found. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env file.")
         
-        self.token = self.settings.telegram_token
-        self.chat_id = self.settings.telegram_chat_id
-        
-        # Create agent manager
-        self.agent_manager = AgentManager(**self.agent_config)
+        # Create agent manager using the factory function
+        # The factory will use settings.get_openai_config() internally
+        self.agent_manager = create_agent_manager()
         
         # Store active users and their conversations
         self.active_users = {}
@@ -156,9 +158,9 @@ class TelegramBotHandler:
                 
             self.bot.reply_to(
                 message,
-                f"Current model: {self.agent_config['model']}\n"
-                f"Temperature: {self.agent_config['temperature']}\n"
-                f"Max tokens: {self.agent_config['max_tokens']}"
+                f"Current model: {self.agent_manager.model}\n"
+                f"Temperature: {self.agent_manager.temperature}\n"
+                f"Max tokens: {self.agent_manager.max_tokens}"
             )
         
         @self.bot.message_handler(commands=['ask'])
@@ -222,9 +224,10 @@ class TelegramBotHandler:
         self.active_users[user_id]["history"].append({"role": "user", "content": question_text})
         
         # Reinitialize agent manager with fresh settings
-        self.agent_config = self.settings.get_agent_config()
-        logger.info(f"Agent config: model={self.agent_config.get('model')}, temperature={self.agent_config.get('temperature')}")
-        self.agent_manager = AgentManager(**self.agent_config)
+        # self.agent_config is no longer needed here for agent creation itself
+        # The factory function will fetch the latest OpenAI config from Settings.
+        logger.info("Reinitializing AgentManager using factory.")
+        self.agent_manager = create_agent_manager()
         
         # Send "typing" action
         logger.info(f"Sending typing action to chat {message.chat.id}")
@@ -237,7 +240,7 @@ class TelegramBotHandler:
             waiting_msg = self.bot.reply_to(message, "Processing your request...")
             logger.info(f"Sent waiting message with ID: {waiting_msg.message_id}")
             
-            logger.info(f"Starting agent.process_message_robust call for: '{question_text}'")
+            logger.info(f"Starting agent.process_message call for: '{question_text}'")
             # Process message through agent (async call in a sync context)
             # Use robust message processing with retries and fallbacks
             try:
@@ -253,7 +256,7 @@ class TelegramBotHandler:
 
                 # Add timeout handling to detect if it's simply taking too long
                 start_time = loop.time()
-                response = loop.run_until_complete(self.agent_manager.process_message_robust(
+                response = loop.run_until_complete(self.agent_manager.process_message(
                     message=question_text,
                     streaming=False  # Non-streaming mode
                 ))
@@ -264,7 +267,7 @@ class TelegramBotHandler:
                 logger.error("Agent processing timed out")
                 raise
             except Exception as e:
-                logger.error(f"Exception during agent.process_message_robust: {str(e)}", exc_info=True)
+                logger.error(f"Exception during agent.process_message: {str(e)}", exc_info=True)
                 raise
             
             # Remove trace URL from the response if present
@@ -335,11 +338,11 @@ def main():
     logger.info("Telegram bot main function called")
     try:
         # Check environment variables
-        from src.config.settings import Settings
+       
         settings = Settings(force_reload=True)
         
         # Get agent config to access model information
-        agent_config = settings.get_agent_config()
+        agent_config = settings.get_openai_config()
         
         # Log configuration details
         logger.info("Telegram bot configuration:")

@@ -124,14 +124,23 @@ class Settings:
             logger.error(error_msg)
             raise ValueError(error_msg)
     
-    def get_agent_config(self) -> Dict[str, Any]:
-        """Get the agent configuration settings."""
+    def get_openai_config(self) -> Dict[str, Any]:
+        """Get the OpenAI agent configuration settings."""
         return {
             "model": self.default_model,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "mcp_sse_url": self.mcp_sse_url
+        }
+    
+    def get_telegram_config(self) -> Dict[str, Any]:
+        """Get the Telegram bot configuration settings."""
+        return {
+            "token": self.telegram_token,
+            "chat_id": self.telegram_chat_id
         }
     
     def is_telegram_configured(self) -> bool:
         """Check if Telegram is properly configured."""
-        return bool(self.telegram_token and self.telegram_chat_id) 
+        telegram_cfg = self.get_telegram_config()
+        return bool(telegram_cfg["token"] and telegram_cfg["chat_id"]) 
