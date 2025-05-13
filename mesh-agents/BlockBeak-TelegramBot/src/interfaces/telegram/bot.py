@@ -75,7 +75,7 @@ class TelegramBotHandler:
         return self.active_users[user_id]
     
     def extract_entities(self, message):
-        """Extract entities (like hyperlinks) from a message and format them for better processing"""
+        """Extract entities (like hyperlinks) from a user input message in TG and format them to texts for better processing"""
         if not hasattr(message, 'entities') or not message.entities:
             return message.text
             
