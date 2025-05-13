@@ -19,12 +19,11 @@ class Settings:
     _instance = None
     _initialized = False
     
-    def __new__(cls, env_file: Optional[str] = None, force_reload: bool = False):
+    def __new__(cls, force_reload: bool = False):
         """
         Create a singleton instance of Settings.
         
         Args:
-            env_file: Optional path to a .env file to load
             force_reload: Whether to force reload environment variables
         """
         if cls._instance is None or force_reload:
@@ -32,12 +31,11 @@ class Settings:
             cls._initialized = False
         return cls._instance
     
-    def __init__(self, env_file: Optional[str] = None, force_reload: bool = False):
+    def __init__(self, force_reload: bool = False):
         """
         Initialize settings by loading from environment variables.
         
         Args:
-            env_file: Optional path to a .env file to load
             force_reload: Whether to force reload environment variables
         """
         # Skip initialization if already initialized and not forcing reload
@@ -47,14 +45,10 @@ class Settings:
         logger = logging.getLogger(__name__)
         logger.info(f"Initializing Settings (force_reload={force_reload})")
             
-        # Find the .env file if not specified
-        if env_file is None:
-            env_path = Path(__file__).resolve().parent.parent.parent / '.env'
-            logger.info(f"Loading environment from {env_path}")
-            load_dotenv(env_path, override=True)  # Always override to ensure latest values
-        else:
-            logger.info(f"Loading environment from {env_file}")
-            load_dotenv(env_file, override=True)  # Always override to ensure latest values
+        # Load environment from root .env file
+        env_path = Path(__file__).resolve().parent.parent.parent / '.env'
+        logger.info(f"Loading environment from {env_path}")
+        load_dotenv(env_path, override=True)  # Always override to ensure latest values
             
         # Verify API key is set
         if not os.getenv("OPENAI_API_KEY"):
@@ -64,8 +58,6 @@ class Settings:
         self.default_model = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-4.1-mini")
         self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "500000"))
-        
-
         
         if not os.getenv("MCP_SSE_URL"):
             raise ValueError("MCP_SSE_URL not found in environment variables. Please set it in .env file.")
