@@ -5,6 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 import logging
+import yaml
 
 
 class Settings:
@@ -71,7 +72,8 @@ class Settings:
         logger.info(f"Raw TELEGRAM_CHAT_ID from os.environ: '{chat_id_str}'")
         self.telegram_chat_id = self._parse_chat_id(chat_id_str)
         
-        # Mark as initialized
+        self.agent_instructions = self._load_agent_instructions()
+        
         self._initialized = True
     
     @classmethod
@@ -116,6 +118,24 @@ class Settings:
             logger.error(error_msg)
             raise ValueError(error_msg)
     
+    def _load_agent_instructions(self) -> str:
+        """Load agent instructions from YAML file."""
+        logger = logging.getLogger(__name__)
+        try:
+            config_dir = Path(__file__).parent
+            yaml_path = config_dir / "agent_instructions.yaml"
+            
+            if not yaml_path.exists():
+                logger.error(f"Agent instructions file not found at: {yaml_path}")
+                raise FileNotFoundError(f"Missing agent instructions file: {yaml_path}")
+                
+            with open(yaml_path, 'r') as f:
+                return yaml.safe_load(f)['instructions']
+                
+        except Exception as e:
+            logger.error(f"Failed to load agent instructions: {str(e)}")
+            raise
+    
     def get_openai_config(self) -> Dict[str, Any]:
         """Get the OpenAI agent configuration settings."""
         return {
@@ -135,4 +155,8 @@ class Settings:
     def is_telegram_configured(self) -> bool:
         """Check if Telegram is properly configured."""
         telegram_cfg = self.get_telegram_config()
-        return bool(telegram_cfg["token"] and telegram_cfg["chat_id"]) 
+        return bool(telegram_cfg["token"] and telegram_cfg["chat_id"])
+    
+    def get_agent_instructions(self) -> str:
+        """Get the agent instructions."""
+        return self.agent_instructions 
