@@ -11,8 +11,6 @@ from agents import Agent as OpenAIAgent, Runner, gen_trace_id, trace, ModelSetti
 from agents.mcp import MCPServerSse
 from src.config.settings import Settings
 
-
-# Set up logger
 logger = logging.getLogger(__name__)
 
 def load_agent_instructions() -> str:
@@ -32,7 +30,6 @@ def load_agent_instructions() -> str:
         logger.error(f"Failed to load agent instructions: {str(e)}")
         raise
 
-# Default instructions loaded from YAML
 DEFAULT_INSTRUCTIONS = load_agent_instructions()
 
 class AgentError(Exception):
@@ -86,16 +83,10 @@ class AgentManager:
         enable_mcp_cache: bool = True,
         cache_ttl_seconds: int = 3600,
     ):
-        """Initialize the Agent Manager."""
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.mcp_sse_url = mcp_sse_url
-        
-        # Validate mcp_sse_url (already good practice)
-        if not self.mcp_sse_url:
-            raise ValueError("mcp_sse_url is required for AgentManager")
-            
+        self.mcp_sse_url = mcp_sse_url   
         self.instructions = instructions
         self.retry_config = retry_config or RetryConfig()
         self.client = OpenAI()
@@ -105,7 +96,6 @@ class AgentManager:
         self.mcp_server = None
 
     def _create_error_details(self, error: Exception, retry_count: Optional[int] = None, model: Optional[str] = None, **extra_fields) -> Dict[str, Any]:
-        """Create standardized error details dictionary."""
         details = {
             "type": type(error).__name__,
             "message": str(error),
@@ -128,7 +118,6 @@ class AgentManager:
         return details
 
     async def _exponential_backoff(self, retry_count: int) -> None:
-        """Exponential backoff with jitter for retries."""
         delay = min(
             self.retry_config.base_delay * (2 ** retry_count) + random.uniform(0, 1),
             self.retry_config.max_delay
@@ -159,7 +148,6 @@ class AgentManager:
                 return await asyncio.wait_for(f(*a, **kw), timeout=config.timeout)
             return await f(*a, **kw)
 
-        # Standard retry loop
         for retry in range(config.max_retries):
             try:
                 logger.debug(f"Executing function (attempt {retry+1}/{config.max_retries})")
@@ -168,8 +156,7 @@ class AgentManager:
             except Exception as e:
                 last_exception = e
                 error_details = self._create_error_details(e, retry)
-                
-                # Check if the error is retriable
+
                 is_retriable = isinstance(e, tuple(config.retriable_exceptions))
                 if not is_retriable:
                     logger.error(f"Non-retriable error encountered: {str(e)}")
@@ -191,9 +178,6 @@ class AgentManager:
         raise AgentError(error_message, error_details, retriable=False)
 
     async def _create_agent_with_retry(self):
-        """Create and return an OpenAI agent instance with retries."""
-        logger.debug("Creating agent with retry mechanism")
-        
         async def create_agent():
             self.trace_id = gen_trace_id()
             logger.debug(f"Generated trace ID: {self.trace_id}")
@@ -221,11 +205,10 @@ class AgentManager:
         
         return await self._execute_with_retry(
             create_agent,
-            retry_config=RetryConfig(timeout=30)  # 30 second timeout for agent creation
+            retry_config=RetryConfig(timeout=30)
         )
 
     async def _run_agent_with_retry(self, agent, message):
-        """Run the agent with retry logic."""
         async def run_agent():
             logger.info(f"Running agent with message: '{message[:50]}...' (truncated)")
             result = await Runner.run(
@@ -251,53 +234,30 @@ class AgentManager:
         streaming: bool = False,
         context_update: Optional[Dict[str, Any]] = None
     ) -> Union[str, AsyncGenerator[str, None]]:
-        """
-        Process a user message and return response.
-        This is now the single, robust entry point for message processing.
-        """
-        logger.info(f"Processing message: '{message[:50]}...' (truncated)")
-        
         if context_update:
             self.context.update(context_update)
             logger.debug(f"Updated context with {len(context_update)} keys")
-            
-        async def process():
-            # Create agent first to initialize mcp_server with retries
-            agent = await self._create_agent_with_retry()
-            
-            logger.debug(f"MCP server initialized: {self.mcp_server is not None}")
-            async with self.mcp_server:
-                with trace(workflow_name="MCP Agent", trace_id=self.trace_id):
-                    trace_url = f"https://platform.openai.com/traces/trace?trace_id={self.trace_id}"
-                    logger.debug(f"Trace ID: {self.trace_id}")
-                    
-                    result = await self._run_agent_with_retry(agent, message)
-                    
-                    if streaming:
-                        logger.debug("Preparing streaming response")
-                        async def stream_response():
-                            yield f"View trace: {trace_url}\n\n"
-                            for chunk in result.final_output.split():
-                                yield chunk + " "
-                        return stream_response()
-                    else:
-                        logger.info(f"Generated response of length {len(result.final_output)}")
-                        return f"View trace: {trace_url}\n\n{result.final_output}"
+
+        agent = await self._create_agent_with_retry()
         
-        # Use enhanced retry mechanism with timeout
-        return await self._execute_with_retry(
-            process,
-            retry_config=RetryConfig(
-                max_retries=3,
-                timeout=120,  # 2 minute timeout for entire process
-                retriable_exceptions=[
-                    RetryableError,
-                    asyncio.TimeoutError,
-                    OpenAIError,
-                    Exception  # Consider any unknown error as retriable at this level
-                ]
-            )
-        )
+        logger.debug(f"MCP server initialized: {self.mcp_server is not None}")
+        async with self.mcp_server:
+            with trace(workflow_name="MCP Agent", trace_id=self.trace_id):
+                trace_url = f"https://platform.openai.com/traces/trace?trace_id={self.trace_id}"
+                logger.debug(f"Trace ID: {self.trace_id}")
+                
+                result = await self._run_agent_with_retry(agent, message)
+                
+                if streaming:
+                    logger.debug("Preparing streaming response")
+                    async def stream_response():
+                        yield f"View trace: {trace_url}\n\n"
+                        for chunk in result.final_output.split():
+                            yield chunk + " "
+                    return stream_response()
+                else:
+                    logger.info(f"Generated response of length {len(result.final_output)}")
+                    return f"View trace: {trace_url}\n\n{result.final_output}"
 
     def get_trace_url(self) -> str:
         """Get the URL for the current trace."""
@@ -336,16 +296,9 @@ def create_agent_manager(
                   (e.g., instructions, retry_config, context, enable_mcp_cache).
     """
     
-    app_settings = Settings()
+    config = Settings().get_openai_config()
     
-    # Get base OpenAI agent configuration
-    core_config = app_settings.get_openai_config()
-    
-    # Apply overrides if provided
     if agent_config_override:
-        core_config.update(agent_config_override)
-        
-    final_config = {**core_config, **kwargs}
-    
+        config.update(agent_config_override)
 
-    return AgentManager(**final_config)
+    return AgentManager(**{**config, **kwargs})
