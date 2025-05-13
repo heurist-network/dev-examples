@@ -233,7 +233,7 @@ class AgentManager:
         message: str,
         streaming: bool = False,
         context_update: Optional[Dict[str, Any]] = None
-    ) -> Union[str, AsyncGenerator[str, None]]:
+    ) -> Union[Dict[str, str], AsyncGenerator[str, None]]:
         if context_update:
             self.context.update(context_update)
             logger.debug(f"Updated context with {len(context_update)} keys")
@@ -257,7 +257,10 @@ class AgentManager:
                     return stream_response()
                 else:
                     logger.info(f"Generated response of length {len(result.final_output)}")
-                    return f"View trace: {trace_url}\n\n{result.final_output}"
+                    return {
+                        "output": result.final_output,
+                        "trace_url": trace_url
+                    }
 
     def get_trace_url(self) -> str:
         """Get the URL for the current trace."""

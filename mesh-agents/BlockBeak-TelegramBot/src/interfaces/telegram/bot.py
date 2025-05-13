@@ -219,22 +219,20 @@ class TelegramBotHandler:
                 asyncio.set_event_loop(loop)
 
             start_time = loop.time()
-            response = loop.run_until_complete(self.agent_manager.process_message(
+            # agent_manager.process_message now returns a dictionary
+            agent_response_data = loop.run_until_complete(self.agent_manager.process_message(
                 message=question_text,
                 streaming=False
             ))
             logger.info(f"Agent processing completed in {loop.time() - start_time:.2f} seconds")
 
-            # TODO: refactor this to use a new response format
-            if "View trace:" in response:
-                parts = response.split("\n\n", 1)
-                trace_url = parts[0] if len(parts) > 0 else ""
-                logger.debug(f"Trace URL: {trace_url}")
-                # Keep only the actual response part
-                response = parts[1] if len(parts) > 1 else ""
+            actual_output = agent_response_data["output"]
+            trace_url = agent_response_data["trace_url"]
+
+            logger.debug(f"Trace URL: {trace_url}")
             
             # Store response in history (without trace URL)
-            self.active_users[user_id]["history"].append({"role": "assistant", "content": response})
+            self.active_users[user_id]["history"].append({"role": "assistant", "content": actual_output})
             
             # Delete waiting message and send response
             try:
@@ -243,8 +241,8 @@ class TelegramBotHandler:
             except Exception as e:
                 logger.warning(f"Failed to delete waiting message: {e}")
 
-            logger.debug(f"Response preview: {response[:100]}...")
-            self.bot.reply_to(message, response)
+            logger.debug(f"Response preview: {actual_output[:100]}...")
+            self.bot.reply_to(message, actual_output)
             
         except Exception as e:
             logger.error(f"Error in process_message: {type(e).__name__}: {str(e)}", exc_info=True)
