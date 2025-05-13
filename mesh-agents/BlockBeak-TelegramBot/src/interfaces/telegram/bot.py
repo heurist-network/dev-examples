@@ -17,7 +17,6 @@ class TelegramBotHandler:
         # Force reload settings to ensure we have the latest environment variables
         self.settings = Settings(force_reload=True)
         
-        # Get Telegram-specific config
         telegram_cfg = self.settings.get_telegram_config()
         self.token = telegram_cfg["token"]
         self.chat_id = telegram_cfg["chat_id"]
@@ -27,18 +26,12 @@ class TelegramBotHandler:
         if not self.settings.is_telegram_configured():
             raise ValueError("Telegram bot token or chat ID not found. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env file.")
         
-        # Create agent manager using the factory function
-        # The factory will use settings.get_openai_config() internally
         self.agent_manager = create_agent_manager()
         
-        # Store active users and their conversations
         self.active_users = {}
         
-        # Initialize the telebot
         self.bot = telebot.TeleBot(self.token)
         self.register_handlers()
-        
-        # Set up commands
         self.setup_commands()
     
     def setup_commands(self):
@@ -52,20 +45,19 @@ class TelegramBotHandler:
     
     def is_authorized_chat(self, message):
         """Check if the message is from an authorized chat"""
-        # If chat_id is None, don't authorize any chats
         if self.chat_id is None:
             logger.info("No authorized chat IDs configured")
             return False
         
         msg_chat_id = int(message.chat.id)
-        # Debug: Log the chat ID comparison details
-        logger.info(f"AUTH CHECK: Message chat_id: {msg_chat_id}, Authorized IDs: {self.chat_id}")
-        logger.info(f"AUTH CHECK: Type of message chat_id: {type(msg_chat_id)}")
-        logger.info(f"AUTH CHECK: Types in authorized list: {[type(id) for id in self.chat_id]}")
+
+        logger.debug(f"AUTH CHECK: Message chat_id: {msg_chat_id}, Authorized IDs: {self.chat_id}")
+        logger.debug(f"AUTH CHECK: Type of message chat_id: {type(msg_chat_id)}")
+        logger.debug(f"AUTH CHECK: Types in authorized list: {[type(id) for id in self.chat_id]}")
         
         is_authorized = msg_chat_id in self.chat_id
         
-        logger.info(f"AUTH CHECK: Is authorized: {is_authorized}")
+        logger.debug(f"AUTH CHECK: Is authorized: {is_authorized}")
         
         if not is_authorized:
             logger.warning(f"Unauthorized chat {msg_chat_id} attempted access")
@@ -165,16 +157,15 @@ class TelegramBotHandler:
         
         @self.bot.message_handler(commands=['ask'])
         def ask_command(message):
-            logger.info(f"Received /ask command in chat {message.chat.id}")
+            logger.debug(f"Received /ask command in chat {message.chat.id}")
             if not self.is_authorized_chat(message):
                 logger.warning(f"Unauthorized chat {message.chat.id} attempted to use /ask command")
                 return
             
-            logger.info(f"Authorization passed for /ask command in chat {message.chat.id}")    
+            logger.debug(f"Authorization passed for /ask command in chat {message.chat.id}")    
             user_id = message.from_user.id
-            logger.info(f"Processing /ask command from user {message.from_user.username or user_id}")
+            logger.info(f"Processing /ask command from user {message.from_user.username or user_id}, text: '{message.text}'")
             
-            # Initialize or get user session
             self.get_or_create_user_session(
                 user_id, 
                 message.from_user.first_name, 
@@ -189,8 +180,7 @@ class TelegramBotHandler:
                 logger.warning("Empty question in /ask command")
                 self.bot.reply_to(message, "Please provide a question after /ask")
                 return
-            
-            # Process the question
+
             try:
                 logger.debug("Calling process_message with question")
                 self.process_message(message, question)
@@ -202,75 +192,40 @@ class TelegramBotHandler:
                     logger.error(f"Failed to send error reply: {send_error}")
     
     def process_message(self, message, question_text):
-        """Process user messages through the agent manager"""
         logger.info(f"Processing message for user {message.from_user.username or message.from_user.id}, text: '{question_text[:50]}...'")
         
-        # Special debug for cryptocurrency queries
-        if "$" in question_text or "price" in question_text.lower():
-            logger.info(f"Detected cryptocurrency query: '{question_text}'")
-        
-        # Reload environment variables before each request using Settings singleton
-        logger.info("Reloading settings")
         self.settings = Settings.reload()
-        
         user_id = message.from_user.id
         
-        # Process entities if present in the original message
         if hasattr(message, 'entities') and message.entities:
             question_text = self.extract_entities(message)
             logger.debug(f"Processed entities, resulting text: '{question_text[:50]}...'")
         
-        # Store the question in history
         self.active_users[user_id]["history"].append({"role": "user", "content": question_text})
-        
-        # Reinitialize agent manager with fresh settings
-        # self.agent_config is no longer needed here for agent creation itself
-        # The factory function will fetch the latest OpenAI config from Settings.
-        logger.info("Reinitializing AgentManager using factory.")
         self.agent_manager = create_agent_manager()
         
-        # Send "typing" action
-        logger.info(f"Sending typing action to chat {message.chat.id}")
+        logger.debug(f"Sending typing action to chat {message.chat.id}")
         self.bot.send_chat_action(message.chat.id, 'typing')
-        logger.debug("Sent 'typing' action")
+        
+        waiting_msg = self.bot.reply_to(message, "Processing your request...")
+        logger.debug(f"Sent waiting message with ID: {waiting_msg.message_id}")
         
         try:
-            # Show a waiting message
-            logger.info("Sending waiting message")
-            waiting_msg = self.bot.reply_to(message, "Processing your request...")
-            logger.info(f"Sent waiting message with ID: {waiting_msg.message_id}")
-            
-            logger.info(f"Starting agent.process_message call for: '{question_text}'")
-            # Process message through agent (async call in a sync context)
-            # Use robust message processing with retries and fallbacks
+            # Set up event loop
             try:
-                logger.info("Creating asyncio task for agent processing")
-                
-                # Get or create an event loop for the current thread
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    logger.info("No current event loop found, creating a new one.")
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
-                # Add timeout handling to detect if it's simply taking too long
-                start_time = loop.time()
-                response = loop.run_until_complete(self.agent_manager.process_message(
-                    message=question_text,
-                    streaming=False  # Non-streaming mode
-                ))
-                elapsed_time = loop.time() - start_time
-                logger.info(f"Agent processing completed in {elapsed_time:.2f} seconds")
-                logger.info(f"Agent returned response of length: {len(response)}")
-            except asyncio.TimeoutError:
-                logger.error("Agent processing timed out")
-                raise
-            except Exception as e:
-                logger.error(f"Exception during agent.process_message: {str(e)}", exc_info=True)
-                raise
-            
-            # Remove trace URL from the response if present
+            start_time = loop.time()
+            response = loop.run_until_complete(self.agent_manager.process_message(
+                message=question_text,
+                streaming=False
+            ))
+            logger.info(f"Agent processing completed in {loop.time() - start_time:.2f} seconds")
+
+            # TODO: refactor this to use a new response format
             if "View trace:" in response:
                 parts = response.split("\n\n", 1)
                 trace_url = parts[0] if len(parts) > 0 else ""
@@ -287,64 +242,40 @@ class TelegramBotHandler:
                 self.bot.delete_message(message.chat.id, waiting_msg.message_id)
             except Exception as e:
                 logger.warning(f"Failed to delete waiting message: {e}")
-            
-            logger.debug(f"Sending final response of length: {len(response)}")
-            try:
-                # Log first part of the response to debug
-                logger.debug(f"Response preview: {response[:100]}...")
-                result = self.bot.reply_to(message, response)
-                logger.info(f"Successfully sent response with message ID: {result.message_id}")
-            except Exception as e:
-                logger.error(f"Exception while sending response: {str(e)}", exc_info=True)
-                # Try sending a simpler message
-                self.bot.reply_to(message, "I encountered an error while sending my response. Please try again.")
+
+            logger.debug(f"Response preview: {response[:100]}...")
+            self.bot.reply_to(message, response)
             
         except Exception as e:
-            logger.error(f"Exception in process_message: {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.error(f"Error in process_message: {type(e).__name__}: {str(e)}", exc_info=True)
             error_message = str(e)
-            error_details = getattr(e, 'details', None)
             
-            if error_details:
-                logger.error(f"Error details: {error_details}")
+            if hasattr(e, 'details'):
+                error_details = e.details
                 if error_details.get('type') == 'OpenAIError':
                     error_message = (
                         f"OpenAI API Error:\n"
                         f"Message: {error_details.get('message')}\n"
                         f"Request ID: {error_details.get('request_id')}\n"
                     )
-                    
-            # Attempt to send error message
-            try:
-                self.bot.reply_to(message, f"Sorry, an error occurred: {error_message[:200]}")
-            except Exception as send_error:
-                logger.error(f"Could not send error message: {send_error}")
+            
+            self.bot.reply_to(message, f"Sorry, an error occurred: {error_message[:200]}")
     
     def run(self):
         """Run the Telegram bot."""
-        logger.info("Starting Telegram bot using pyTelegramBotAPI in non-streaming mode")
-        
-        # Debug: Check event loop status before starting polling
         try:
-            logger.info("Checking asyncio event loop...")
-            loop = asyncio.get_event_loop()
-            logger.info(f"Event loop: {loop}, running: {loop.is_running()}")
+            asyncio.get_event_loop()
         except Exception as e:
             logger.error(f"Error checking event loop: {e}")
         
         self.bot.infinity_polling()
 
 def main():
-    """Entry point for the Telegram interface."""
-    logger.info("Telegram bot main function called")
     try:
-        # Check environment variables
-       
         settings = Settings(force_reload=True)
-        
-        # Get agent config to access model information
+
         agent_config = settings.get_openai_config()
-        
-        # Log configuration details
+
         logger.info("Telegram bot configuration:")
         logger.info(f"Bot token present: {bool(settings.telegram_token)}")
         logger.info(f"Authorized chat IDs: {settings.telegram_chat_id}")
@@ -352,8 +283,7 @@ def main():
         
         bot_handler = TelegramBotHandler()
         logger.info("TelegramBotHandler created successfully")
-        
-        # Run the bot
+
         logger.info("Starting bot polling...")
         bot_handler.run()
     except ValueError as e:
