@@ -3,6 +3,7 @@
 import logging
 import asyncio
 import telebot
+import re
 from src.core.agent import create_agent_manager
 from src.config.settings import Settings
 
@@ -124,7 +125,7 @@ class TelegramBotHandler:
                 "Here are the available commands:\n"
                 "/help - Show this help message\n"
                 "/model - Show the current AI model\n"
-                "/ask - Ask me a question (e.g., /ask What's the weather like?)"
+                "/ask - Ask me a question (e.g., /ask Any bullish news about ETH?)"
             )
         
         @self.bot.message_handler(commands=['model'])
@@ -156,86 +157,67 @@ class TelegramBotHandler:
                 message.from_user.username
             )
             
-            # Extract the question from the message (remove /ask)
-            if ' ' in message.text:
-                question = message.text.split(' ', 1)[1]
-                logger.info(f"Question extracted: '{question}'")
-            else:
+            # Reject empty questions
+            if ' ' not in message.text or len(message.text) < 5:
                 logger.warning("Empty question in /ask command")
                 self.bot.reply_to(message, "Please provide a question after /ask")
                 return
 
             try:
-                logger.debug("Calling process_message with question")
-                self.process_message(message, question)
+                self.process_message(message)
             except Exception as e:
                 logger.error(f"Error in ask_command handler: {str(e)}", exc_info=True)
                 self.send_error_reply(message, "Sorry, there was an error processing your question. Please try again.")
     
-    def process_message(self, message, question_text):
-        logger.info(f"Processing message for user {message.from_user.username or message.from_user.id}, text: '{question_text[:50]}...'")
-        
+    async def process_question_async(self, question_text):
+        agent_response_data = await self.agent_manager.process_message(
+            message=question_text,
+            streaming=False
+        )
+        return agent_response_data
+
+    def process_message(self, message):
         user_id = message.from_user.id
-        
+
+        # Handle entities if present
         if hasattr(message, 'entities') and message.entities:
             question_text = self.extract_entities(message)
-            logger.debug(f"Processed entities, resulting text: '{question_text[:50]}...'")
+        else:
+            question_text = message.text
         
+        # Remove the "/ask" command from the message
+        question_text = re.sub(r'^\/ask\s+', '', question_text)
+        logger.info(f"Question extracted: '{question_text}'")
+
         self.active_users[user_id]["history"].append({"role": "user", "content": question_text})
-        self.agent_manager = create_agent_manager()
-        
-        logger.debug(f"Sending typing action to chat {message.chat.id}")
-        self.bot.send_chat_action(message.chat.id, 'typing')
         
         waiting_msg = self.bot.reply_to(message, "Processing your request...")
-        logger.debug(f"Sent waiting message with ID: {waiting_msg.message_id}")
-        
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        try:
-            start_time = loop.time()
-            agent_response_data = loop.run_until_complete(self.agent_manager.process_message(
-                message=question_text,
-                streaming=False
-            ))
-            logger.info(f"Agent processing completed in {loop.time() - start_time:.2f} seconds")
+        self.bot.send_chat_action(message.chat.id, 'typing')
 
+        loop = asyncio.new_event_loop()
+        try:
+            agent_response_data = loop.run_until_complete(
+                self.process_question_async(question_text)
+            )
+            
             actual_output = agent_response_data["output"]
             trace_url = agent_response_data["trace_url"]
 
             logger.debug(f"Trace URL: {trace_url}")
-            
-            # Store response in history (without trace URL)
             self.active_users[user_id]["history"].append({"role": "assistant", "content": actual_output})
             
-            # Delete waiting message and send response
             try:
-                logger.debug(f"Deleting waiting message: {waiting_msg.message_id}")
                 self.bot.delete_message(message.chat.id, waiting_msg.message_id)
             except Exception as e:
                 logger.warning(f"Failed to delete waiting message: {e}")
 
             logger.debug(f"Response preview: {actual_output[:100]}...")
             self.bot.reply_to(message, actual_output)
-            
         except Exception as e:
             logger.error(f"Error in process_message: {type(e).__name__}: {str(e)}", exc_info=True)
-            error_message = str(e)
-            
-            if hasattr(e, 'details'):
-                error_details = getattr(e, 'details', {})
-                if isinstance(error_details, dict) and error_details.get('type') == 'OpenAIError':
-                    error_message = (
-                        f"OpenAI API Error:\n"
-                        f"Message: {error_details.get('message', 'Unknown error')}\n"
-                        f"Request ID: {error_details.get('request_id', 'N/A')}\n"
-                    )
-            
-            self.bot.reply_to(message, f"Sorry, an error occurred: {error_message[:200]}")
+            self.send_error_reply(message, f"Sorry, an error occurred: {str(e)[:200]}")
+        finally:
+            loop.close()
     
     def send_error_reply(self, message, error_text):
         try:
