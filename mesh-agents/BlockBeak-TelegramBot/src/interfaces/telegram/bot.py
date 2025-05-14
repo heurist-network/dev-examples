@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 class TelegramBotHandler:
     def __init__(self):
-        # Force reload settings to ensure we have the latest environment variables
         self.settings = Settings(force_reload=True)
         
         telegram_cfg = self.settings.get_telegram_config()
@@ -111,21 +110,6 @@ class TelegramBotHandler:
         
         return formatted_text
     
-    def extract_command(self, text):
-        """Extract the command from a message text, handling commands with bot username"""
-        if not text:
-            return None
-            
-        # Split the text by the first space
-        parts = text.split(' ', 1)
-        command = parts[0]
-        
-        # Remove the bot username suffix if present
-        if '@' in command:
-            command = command.split('@', 1)[0]
-            
-        return command
-    
     def register_handlers(self):
         """Register message handlers"""
 
@@ -186,15 +170,11 @@ class TelegramBotHandler:
                 self.process_message(message, question)
             except Exception as e:
                 logger.error(f"Error in ask_command handler: {str(e)}", exc_info=True)
-                try:
-                    self.bot.reply_to(message, "Sorry, there was an error processing your question. Please try again.")
-                except Exception as send_error:
-                    logger.error(f"Failed to send error reply: {send_error}")
+                self.send_error_reply(message, "Sorry, there was an error processing your question. Please try again.")
     
     def process_message(self, message, question_text):
         logger.info(f"Processing message for user {message.from_user.username or message.from_user.id}, text: '{question_text[:50]}...'")
         
-        self.settings = Settings.reload()
         user_id = message.from_user.id
         
         if hasattr(message, 'entities') and message.entities:
@@ -211,15 +191,13 @@ class TelegramBotHandler:
         logger.debug(f"Sent waiting message with ID: {waiting_msg.message_id}")
         
         try:
-            # Set up event loop
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        try:
             start_time = loop.time()
-            # agent_manager.process_message now returns a dictionary
             agent_response_data = loop.run_until_complete(self.agent_manager.process_message(
                 message=question_text,
                 streaming=False
@@ -249,44 +227,46 @@ class TelegramBotHandler:
             error_message = str(e)
             
             if hasattr(e, 'details'):
-                error_details = e.details
-                if error_details.get('type') == 'OpenAIError':
+                error_details = getattr(e, 'details', {})
+                if isinstance(error_details, dict) and error_details.get('type') == 'OpenAIError':
                     error_message = (
                         f"OpenAI API Error:\n"
-                        f"Message: {error_details.get('message')}\n"
-                        f"Request ID: {error_details.get('request_id')}\n"
+                        f"Message: {error_details.get('message', 'Unknown error')}\n"
+                        f"Request ID: {error_details.get('request_id', 'N/A')}\n"
                     )
             
             self.bot.reply_to(message, f"Sorry, an error occurred: {error_message[:200]}")
     
+    def send_error_reply(self, message, error_text):
+        try:
+            self.bot.reply_to(message, error_text)
+        except Exception as send_error:
+            logger.error(f"Failed to send error reply: {send_error}")
+    
     def run(self):
         """Run the Telegram bot."""
         try:
-            asyncio.get_event_loop()
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                asyncio.set_event_loop(asyncio.new_event_loop())
         except Exception as e:
-            logger.error(f"Error checking event loop: {e}")
+            logger.error(f"Error with event loop: {e}")
+            asyncio.set_event_loop(asyncio.new_event_loop())
         
         self.bot.infinity_polling()
 
 def main():
     try:
-        settings = Settings(force_reload=True)
-
-        agent_config = settings.get_openai_config()
-
+        bot_handler = TelegramBotHandler()
+        
+        agent_config = bot_handler.settings.get_openai_config()
         logger.info("Telegram bot configuration:")
-        logger.info(f"Bot token present: {bool(settings.telegram_token)}")
-        logger.info(f"Authorized chat IDs: {settings.telegram_chat_id}")
+        logger.info(f"Bot token present: {bool(bot_handler.settings.telegram_token)}")
+        logger.info(f"Authorized chat IDs: {bot_handler.settings.telegram_chat_id}")
         logger.info(f"Agent model: {agent_config.get('model', 'unknown')}")
         
-        bot_handler = TelegramBotHandler()
-        logger.info("TelegramBotHandler created successfully")
-
         logger.info("Starting bot polling...")
         bot_handler.run()
-    except ValueError as e:
-        logger.error(f"Configuration error: {e}")
-        print(f"Error: {e}")
     except Exception as e:
         logger.error(f"Failed to start Telegram bot: {e}", exc_info=True)
         print(f"Error: {e}")
