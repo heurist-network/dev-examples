@@ -68,13 +68,21 @@ class AgentManager:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.mcp_sse_url = mcp_sse_url
+        self.enable_mcp_cache = enable_mcp_cache
+        self.cache_ttl_seconds = cache_ttl_seconds
+        
+        self.mcp_server = MCPServerSse(
+            name="MCP SSE Server",
+            params={"url": self.mcp_sse_url},
+            cache_tools_list=self.enable_mcp_cache,
+            client_session_timeout_seconds=60
+        )
+
         self.instructions = instructions or Settings().get_agent_instructions()
         self.retry_config = retry_config or RetryConfig()
         self.client = OpenAI()
         self.context = context or {}
-        self.enable_mcp_cache = enable_mcp_cache
-        self.cache_ttl_seconds = cache_ttl_seconds
-        self.mcp_server = None
+
         self.trace_id = None
 
     async def _execute_with_retry(self, func: Callable, *args, **kwargs):
@@ -116,12 +124,6 @@ class AgentManager:
         self.trace_id = gen_trace_id()
         logger.debug(f"Generated trace ID: {self.trace_id}")
         
-        self.mcp_server = MCPServerSse(
-            name="MCP SSE Server",
-            params={"url": self.mcp_sse_url},
-            cache_tools_list=self.enable_mcp_cache,
-            client_session_timeout_seconds=60
-        )
         
         # Create agent
         model_settings = ModelSettings(
