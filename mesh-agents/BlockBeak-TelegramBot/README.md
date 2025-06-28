@@ -1,10 +1,21 @@
-# OpenAI Agent with MCP Server
+# BlockBeak Telegram Bot - Multi-Provider AI Agent
 
-A modular implementation of an OpenAI agent using the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) with support for a Telegram bot interface.
+A sophisticated AI agent built with the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) that provides a Telegram bot interface with support for multiple LLM providers through LiteLLM integration.
 
-The agent can use multiple tools to answer questions and solve complex tasks, planning its approach by chaining together multiple tool calls before providing a final answer.
+BlockBeak specializes in **cryptocurrency Q&A and analysis** while serving as a **generalist assistant**. The agent features dynamic personality adaptation, autonomous exploration capabilities, and seamless integration with the Heurist Mesh network.
 
-## Heurist Mesh Integration
+## 🚀 Key Features
+
+- **Multi-Provider LLM Support**: Use OpenAI, Anthropic, OpenRouter, XAI, or Heurist models
+- **Dynamic Personality System**: Adapts communication style based on query context (Analyst, Pragmatic Pro, The Pulse)
+- **Advanced Crypto Analysis**: Comprehensive token research, market data, social sentiment, and on-chain analysis
+- **Heurist Mesh Integration**: Access specialized AI agents through MCP (Model Control Protocol)
+- **Autonomous Tool Usage**: Intelligent tool selection and iterative refinement
+- **Telegram Bot Interface**: Easy-to-use chat interface with command support
+- **Robust Error Handling**: Retry mechanisms and comprehensive logging
+- **Configurable Architecture**: Flexible settings for model parameters and behavior
+
+## 🔗 Heurist Mesh Integration
 
 This project integrates with [Heurist Mesh](https://github.com/heurist-network/heurist-agent-framework/tree/main/mesh), a network of modular and purpose-built AI agents. Each Mesh agent is a specialized unit designed to excel at specific tasks such as:
 
@@ -12,191 +23,251 @@ This project integrates with [Heurist Mesh](https://github.com/heurist-network/h
 - Analyzing on-chain data
 - Fetching crypto market information
 - Analyzing social media sentiment
+- Web content extraction and analysis
 
 The BlockBeak-TelegramBot connects to these specialized agents through MCP (Model Control Protocol), allowing it to access a rich ecosystem of AI capabilities. This connection is handled through the MCP proxy, which must be configured with the appropriate endpoint in your environment variables.
 
 Learn more about MCP at [mcp.heurist.ai](https://mcp.heurist.ai/).
 
-## Features
-
-- **Modular Design**: Clean separation of concerns using OOD principles
-- **Telegram Bot Interface**: Interact with the agent via Telegram.
-- **Configurable**: Customizable model, temperature, and other settings
-- **Tracing**: Integrated with OpenAI's tracing system for debugging
-
-## Installation & Setup with `uv`
+## 🛠️ Installation & Setup with `uv`
 
 This project uses `uv` for fast Python package management and virtual environments, leveraging its native project management features.
 
-1.  **Install `uv`**:
-    If you don't have `uv` installed, follow the official installation guide: [https://github.com/astral-sh/uv](https://github.com/astral-sh/uv)
-    For example, using pipx:
-    ```bash
-    pipx install uv
-    ```
-    Or on macOS with Homebrew:
-    ```bash
-    brew install uv
-    ```
+### 1. Install `uv`
 
-2.  **Create and Activate Virtual Environment**:
-    Navigate to the project root directory and run:
-    ```bash
-    uv venv
-    ```
-    This will create a `.venv` directory. Activate it:
-    ```bash
-    source .venv/bin/activate  # On macOS/Linux
-    # .venv\Scripts\activate  # On Windows
-    ```
+If you don't have `uv` installed, follow the official installation guide: [https://github.com/astral-sh/uv](https://github.com/astral-sh/uv)
 
-3.  **Install Dependencies**:
-    Synchronize your environment with the project's locked dependencies:
-    ```bash
-    uv sync
-    ```
-    This command uses the `uv.lock` file to ensure a reproducible environment. If `uv.lock` doesn't exist or is out of date with `pyproject.toml`, `uv` might prompt you or automatically run `uv lock`.
+**Using pipx:**
+```bash
+pipx install uv
+```
 
-4.  **Set up Environment Variables**:
-    Copy the example environment file and fill in your details:
-    ```bash
-    cp .env.example .env
-    ```
-    Edit the `.env` file to add your OpenAI API key, Telegram bot token, MCP proxy URL, and other necessary configuration.
+**On macOS with Homebrew:**
+```bash
+brew install uv
+```
 
-### Managing Dependencies
+### 2. Create and Activate Virtual Environment
 
--   **Adding a new dependency**:
-    ```bash
-    uv add <package-name>
-    ```
--   **Updating all dependencies** (regenerates `uv.lock` based on `pyproject.toml` constraints):
-    ```bash
-    uv lock --upgrade
-    uv sync
-    ```
--   **Updating a specific dependency**:
-    ```bash
-    uv add <package-name>@latest  # Or <package-name>@"<version-specifier>"
-    # This will update pyproject.toml and uv.lock, then run `uv sync` automatically or advise to run it.
-    ```
-    Alternatively, update `pyproject.toml` manually, then run:
-    ```bash
-    uv lock
-    uv sync
-    ```
+Navigate to the project root directory and run:
+```bash
+uv venv
+```
 
-**Important**: Commit both `pyproject.toml` and `uv.lock` to your version control system (e.g., Git).
+Activate the virtual environment:
+```bash
+source .venv/bin/activate  # On macOS/Linux
+# .venv\Scripts\activate  # On Windows
+```
 
-## Usage
+### 3. Install Dependencies
 
-### Telegram Bot Interface
+Synchronize your environment with the project's locked dependencies:
+```bash
+uv sync
+```
 
-To use the Telegram interface, you need to:
+This command uses the `uv.lock` file to ensure a reproducible environment.
 
-1. Create a Telegram bot using [@BotFather](https://t.me/BotFather) and get your token
-2. Add the token to your `.env` file as `TELEGRAM_BOT_TOKEN`
-3. Optionally, add a comma-separated list of allowed chat IDs as `TELEGRAM_CHAT_ID`
+### 4. Set up Environment Variables
 
-Then, after activating your `uv` environment (`source .venv/bin/activate`), run:
+Create a `.env` file in the project root with the following variables:
 
 ```bash
-uv run python main.py
-```
-Or, if you prefer not to activate the environment first, you can directly use:
-```bash
-uv run -- python main.py
-```
+# Required: Choose your LLM provider and configure accordingly
+MODEL_PROVIDER=openai  # Options: openai, anthropic, openrouter, xai, heurist
+API_KEY=your_api_key_here
+MODEL=gpt-4o-mini  # Model name for your chosen provider
 
-The bot will start and you can interact with it on Telegram.
+# Required: MCP SSE URL for Heurist Mesh integration
+MCP_SSE_URL=https://your-mcp-sse-endpoint.com
 
-## Project Structure
-
-```
-BlockBeak-TelegramBot/
-├── .env.example             # Example environment variables
-├── main.py                  # Main entry point
-├── README.md                # Project documentation
-└── src/                     # Source code
-    ├── __init__.py          # Package initialization
-    ├── core/                # Core functionality
-    │   ├── __init__.py      # Package initialization
-    │   └── agent.py         # Agent implementation
-    ├── config/              # Configuration
-    │   ├── __init__.py      # Package initialization
-    │   └── settings.py      # Settings manager
-    └── interfaces/          # User interfaces
-        ├── __init__.py      # Package initialization
-        └── telegram/        # Telegram interface
-            ├── __init__.py  # Package initialization
-            └── bot.py       # Telegram bot
-```
-
-### Customizing Agent Behavior
-
-To customize how the agent operates:
-
-1. Modify the agent implementation in `src/core/agent.py`
-2. Update the instructions or model settings in `src/config/settings.py`
-
-## Environment Variables
-
-The following environment variables can be configured in your `.env` file:
-
-```
-# OpenAI API Key (required)
-OPENAI_API_KEY=your_openai_api_key
-
-# Agent settings
-OPENAI_DEFAULT_MODEL=gpt-4.1-mini
-OPENAI_TEMPERATURE=0.1
-OPENAI_MAX_TOKENS=2000
-
-# MCP SSE settings
-MCP_SSE_URL=YOUR_MCP_SSE_URL_HERE # you can get one from https://mcp.heurist.ai/
-
-# Telegram Bot settings
+# Required: Telegram Bot configuration
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=YOUR_CHAT_ID_1, YOUR_CHAT_ID_2, ... # Optional: Comma-separated list of allowed chat IDs
+
+# Optional: Restrict bot access to specific chat IDs
+TELEGRAM_CHAT_ID=123456789,987654321
+
+# Optional: Agent behavior settings
+TEMPERATURE=0.1
+MAX_TOKENS=500000
 ```
 
-## Bot Commands
+### Provider-Specific Configuration
 
-The Telegram bot supports the following commands:
-- `/help` - Show available commands
-- `/model` - Show current model settings
-- `/ask [question]` - Ask a question to the AI assistant
+#### OpenAI
+```bash
+MODEL_PROVIDER=openai
+API_KEY=sk-...
+MODEL=gpt-4o-mini
+```
 
-The bot primarily responds to the `/ask` command, such as `/ask What's is Heurist Mesh MCP?`.
+#### Anthropic
+```bash
+MODEL_PROVIDER=anthropic
+API_KEY=sk-ant-...
+MODEL=claude-3-5-sonnet-20241022
+```
 
-# OpenAI Agent with Telegram Bot
+#### OpenRouter
+```bash
+MODEL_PROVIDER=openrouter
+API_KEY=sk-or-...
+MODEL=anthropic/claude-3-5-sonnet
+```
 
-This project implements an AI assistant using the OpenAI API and provides a Telegram bot interface.
+#### XAI
+```bash
+MODEL_PROVIDER=xai
+API_KEY=your-xai-api-key
+MODEL=x-1
+```
 
-## Setup
+#### Heurist
+```bash
+MODEL_PROVIDER=heurist
+API_KEY=your-heurist-api-key
+MODEL=gpt-4o-mini
+```
 
-(See the main "Installation & Setup with `uv`" section above for the most up-to-date instructions.)
+## 🚀 Usage
 
-## Running the Telegram Bot
+### Starting the Telegram Bot
 
-To run the Telegram bot:
-1. Ensure your environment is set up and activated (see "Installation & Setup with `uv`").
-2. Use the command:
+After setting up your environment variables, run the bot:
+
 ```bash
 uv run python main.py
+```
+
+Or with debug logging:
+```bash
+uv run python main.py --debug
 ```
 
 ### Bot Commands
 
-The bot supports the following commands:
-- `/help` - Show available commands
-- `/model` - Show current model settings
-- `/ask [question] - Ask a question to the AI assistant
+The Telegram bot supports the following commands:
 
-The bot only responds to explicit commands. The primary way to interact with the bot is using the `/ask` command, such as `/ask What's is Heurist Mesh MCP?`.
+- `/help` - Show available commands and usage information
+- `/model` - Display current model settings and provider
+- `/ask [question]` - Ask a question to the AI assistant
 
-## Features
+**Example interactions:**
+```
+/ask What's the current price of Bitcoin?
+/ask Tell me about the Heurist AI token
+/ask Why did PEPE pump today?
+/ask What's the weather like in New York?
+```
 
-- Chat with OpenAI assistants via Telegram using commands
-- Command-driven interface for precise control
-- User authentication based on authorized chat IDs
+## 🏗️ Project Structure
+
+```
+BlockBeak-TelegramBot/
+├── main.py                      # Main entry point
+├── pyproject.toml              # Project configuration and dependencies
+├── uv.lock                     # Locked dependency versions
+├── README.md                   # Project documentation
+└── src/                        # Source code
+    ├── __init__.py             # Package initialization
+    ├── core/                   # Core functionality
+    │   ├── __init__.py         # Package initialization
+    │   └── agent.py            # Agent implementation with multi-provider support
+    ├── config/                 # Configuration
+    │   ├── __init__.py         # Package initialization
+    │   ├── settings.py         # Settings manager with provider configuration
+    │   └── agent_instructions.yaml  # Agent behavior and personality definitions
+    └── interfaces/             # User interfaces
+        ├── __init__.py         # Package initialization
+        └── telegram/           # Telegram interface
+            ├── __init__.py     # Package initialization
+            └── bot.py          # Telegram bot implementation
+```
+
+## 🔧 Configuration
+
+### Agent Behavior Customization
+
+The agent's behavior is defined in `src/config/agent_instructions.yaml`. Key features include:
+
+- **Dynamic Personality System**: Adapts between Analyst, Pragmatic Pro, and The Pulse modes
+- **Crypto Analysis Capabilities**: Comprehensive token research and market analysis
+- **Autonomous Tool Usage**: Intelligent tool selection and iterative refinement
+- **Heurist AI Token Knowledge**: Built-in knowledge about the Heurist project
+
+### Environment Variables Reference
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `MODEL_PROVIDER` | Yes | LLM provider to use | `openai`, `anthropic`, `openrouter`, `xai`, `heurist` |
+| `API_KEY` | Yes | API key for the chosen provider | `sk-...` |
+| `MODEL` | Yes | Model name for the provider | `gpt-4o-mini`, `claude-3-5-sonnet` |
+| `MCP_SSE_URL` | Yes | MCP SSE endpoint for Heurist Mesh | `https://mcp.heurist.ai/...` |
+| `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token from @BotFather | `1234567890:ABC...` |
+| `TELEGRAM_CHAT_ID` | No | Comma-separated list of allowed chat IDs | `123456789,987654321` |
+| `TEMPERATURE` | No | Model temperature (0.0-1.0) | `0.1` |
+| `MAX_TOKENS` | No | Maximum tokens for responses | `500000` |
+
+## 🛠️ Development
+
+### Managing Dependencies
+
+**Adding a new dependency:**
+```bash
+uv add <package-name>
+```
+
+**Updating all dependencies:**
+```bash
+uv lock --upgrade
+uv sync
+```
+
+**Updating a specific dependency:**
+```bash
+uv add <package-name>@latest
+```
+
+### Key Dependencies
+
+- `openai-agents[litellm]==0.0.14` - Core agent framework with LiteLLM support
+- `pyTelegramBotAPI>=4.14.0` - Telegram bot interface
+- `python-dotenv==1.0.0` - Environment variable management
+- `pyyaml>=6.0.1` - YAML configuration parsing
+
+## 🔍 Agent Capabilities
+
+### Crypto Analysis Features
+
+- **Token Identification**: Cross-chain token and address resolution
+- **Market Data**: Price, volume, liquidity analysis via Dexscreener
+- **Social Sentiment**: Twitter/X analysis with full URL citations
+- **On-Chain Analysis**: Holder data, transaction patterns, wallet tracking
+- **Background Research**: Project origins, team information, news analysis
+
+### General Assistant Features
+
+- **Web Content Extraction**: Using firecrawl for URL content analysis
+- **Multi-language Support**: Responds in the user's query language
+- **Dynamic Personality**: Adapts communication style based on context
+- **Autonomous Planning**: Self-directed tool usage and iterative refinement
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📄 License
+
+This project is developed by the Heurist team. For more information, visit [heurist.xyz](https://heurist.xyz).
+
+## 🔗 Links
+
+- [Heurist Mesh](https://github.com/heurist-network/heurist-agent-framework/tree/main/mesh)
+- [MCP Documentation](https://mcp.heurist.ai/)
+- [OpenAI Agents SDK](https://github.com/openai/openai-agents-python)
+- [LiteLLM Documentation](https://docs.litellm.ai/)
