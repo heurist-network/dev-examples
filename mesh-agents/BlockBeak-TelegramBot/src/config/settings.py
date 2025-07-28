@@ -80,6 +80,10 @@ class Settings:
         self.max_tokens = int(os.getenv("MAX_TOKENS", "500000"))
         self.api_key = os.getenv("API_KEY")
         self.mcp_sse_url = os.getenv("MCP_SSE_URL")
+        
+        # Set OPENAI_API_KEY for OpenAI agents library compatibility
+        if self.api_key and self.provider == "openai":
+            os.environ["OPENAI_API_KEY"] = self.api_key
 
         # Telegram Bot settings
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
