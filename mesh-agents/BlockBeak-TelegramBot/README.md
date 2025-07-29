@@ -1,31 +1,56 @@
-# BlockBeak Telegram Bot - Multi-Provider AI Agent
+# BlockBeak - AI-Powered Crypto Research Bot
 
-A sophisticated AI agent built with the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) that provides a Telegram bot interface with support for multiple LLM providers through LiteLLM integration.
+**The entire project runs on just ~200 lines of Python code**, leveraging the OpenAI Agents SDK and Heurist Mesh's Model Context Protocol (MCP). BlockBeak proves that with the right building blocks—an LLM, a clear system prompt, and MCP-enabled agents—you can deliver a full-featured crypto research bot with minimal code.
 
-BlockBeak specializes in **cryptocurrency Q&A and analysis** while serving as a **generalist assistant**. The agent features dynamic personality adaptation, autonomous exploration capabilities, and seamless integration with the Heurist Mesh network.
+BlockBeak is a **prompt-driven AI agent** that specializes in **cryptocurrency Q&A and analysis** through Telegram. Rather than complex architectures and extensive engineering, BlockBeak's behavior is entirely driven by its system prompt, which defines agent capabilities, tool usage patterns, and response formats.
+
+## 🎯 The Core Concept
+
+Most AI implementations involve complex architectures and extensive engineering. BlockBeak demonstrates that with the right building blocks, you can create a powerful crypto research tool with remarkable simplicity:
+
+- **~200 lines of core Python logic** in `src/core/agent.py:73-248`
+- **System prompt-driven behavior** defined in `src/config/agent_instructions.yaml:1-67`
+- **MCP-powered tool ecosystem** through Heurist Mesh integration
+- **Multi-provider LLM support** via LiteLLM integration
 
 ## 🚀 Key Features
 
-- **Multi-Provider LLM Support**: Use OpenAI, Anthropic, OpenRouter, XAI, or Heurist models
-- **Dynamic Personality System**: Adapts communication style based on query context (Analyst, Pragmatic Pro, The Pulse)
-- **Advanced Crypto Analysis**: Comprehensive token research, market data, social sentiment, and on-chain analysis
-- **Heurist Mesh Integration**: Access specialized AI agents through MCP (Model Control Protocol)
-- **Autonomous Tool Usage**: Intelligent tool selection and iterative refinement
+- **Minimal Codebase**: Complete functionality in ~200 lines of Python
+- **Prompt-Driven Customization**: Change behavior via prompts, not code refactors
+- **Dynamic Personality System**: Adapts communication style (Analyst, Pragmatic Pro, The Pulse)
+- **Comprehensive Crypto Analysis**: Token research, market data, social sentiment, on-chain analysis
+- **Tool Composability**: Mix & match specialized agents from Heurist Mesh ecosystem
+- **Multi-Provider LLM Support**: OpenAI, Anthropic, OpenRouter, XAI, or Heurist models
+- **Seamless Integration**: Works out-of-the-box with OpenAI Agents SDK
 - **Telegram Bot Interface**: Easy-to-use chat interface with command support
-- **Robust Error Handling**: Retry mechanisms and comprehensive logging
-- **Configurable Architecture**: Flexible settings for model parameters and behavior
 
-## 🔗 Heurist Mesh Integration
+## 🔗 Heurist Mesh Agents in Action
 
-This project integrates with [Heurist Mesh](https://github.com/heurist-network/heurist-agent-framework/tree/main/mesh), a network of modular and purpose-built AI agents. Each Mesh agent is a specialized unit designed to excel at specific tasks such as:
+BlockBeak taps into a diverse ecosystem of specialized agents through [Heurist Mesh](https://github.com/heurist-network/heurist-agent-framework/tree/main/mesh):
 
-- Processing data from external APIs
-- Analyzing on-chain data
-- Fetching crypto market information
-- Analyzing social media sentiment
-- Web content extraction and analysis
+**Market & Trading Data:**
+- Bitquery Solana Token Info Agent
+- CoinGecko Token Info Agent  
+- DexScreener Token Info Agent
+- Funding Rate Agent
+- PumpFun Token Agent
 
-The BlockBeak-TelegramBot connects to these specialized agents through MCP (Model Control Protocol), allowing it to access a rich ecosystem of AI capabilities. This connection is handled through the MCP proxy, which must be configured with the appropriate endpoint in your environment variables.
+**Social Intelligence:**
+- MindAI KOL Agent
+- Moni Twitter Insight Agent
+- Truth Social Agent
+- Twitter Info Agent
+
+**On-Chain & Wallet Analysis:**
+- Solana Wallet Agent
+- Zerion Wallet Analysis Agent
+
+**Research & Discovery:**
+- Cookie Project Info Agent
+- Exa Search Agent
+- Firecrawl Search Agent
+
+Each brings domain-specific data—on-chain metrics, social sentiment, funding rates, portfolio analysis—to power comprehensive crypto insights. The connection is handled through MCP (Model Control Protocol), configured via the `MCP_SSE_URL` environment variable.
 
 Learn more about MCP at [mcp.heurist.ai](https://mcp.heurist.ai/).
 
@@ -158,43 +183,105 @@ The Telegram bot supports the following commands:
 /ask What's the current price of Bitcoin?
 /ask Tell me about the Heurist AI token
 /ask Why did PEPE pump today?
-/ask What's the weather like in New York?
+/ask Do a deep dive on EIPs related to intent
+/ask Analyze HEU token
 ```
+
+## 🏗️ How BlockBeak Works
+
+The core logic fits in about 200 lines of Python in `src/core/agent.py:59-248`:
+
+### 1. Establish MCP Connection
+```python
+self.mcp_server = MCPServerSse(
+    name="MCP SSE Server",
+    params={"url": self.mcp_sse_url},
+    client_session_timeout_seconds=60
+)
+```
+
+### 2. Instantiate the Agent  
+```python
+agent = OpenAIAgent(
+    name="Assistant",
+    instructions=self.instructions,
+    mcp_servers=[self.mcp_server],
+    model=self._get_model_instance(),
+    model_settings=model_settings
+)
+```
+
+### 3. Process Messages
+```python
+async with self.mcp_server:
+    result = await self._execute_with_retry(
+        Runner.run,
+        starting_agent=agent,
+        input=message,
+        context=self.context,
+    )
+```
+
+Under the hood, retry logic and OOP patterns ensure reliability—but the essence remains refreshingly straightforward.
+
+## 🎨 The Power of System Prompts
+
+BlockBeak's behavior is entirely driven by its system prompt in `src/config/agent_instructions.yaml:1-67`, which defines:
+
+- **Agent capabilities and limits**: Cryptocurrency analysis focus with generalist support
+- **When and how to invoke each tool**: Strategic tool selection for comprehensive research  
+- **Desired response formats**: Markdown formatting rules, source citations, language matching
+- **Dynamic personality adaptation**: Analyst, Pragmatic Pro, and The Pulse modes
+
+**Tweak the prompt and you can transform BlockBeak's personality and scope without touching any Python code.**
 
 ## 🏗️ Project Structure
 
 ```
 BlockBeak-TelegramBot/
-├── main.py                      # Main entry point
+├── main.py                      # Main entry point (~50 lines)
 ├── pyproject.toml              # Project configuration and dependencies
 ├── uv.lock                     # Locked dependency versions
 ├── README.md                   # Project documentation
 └── src/                        # Source code
-    ├── __init__.py             # Package initialization
-    ├── core/                   # Core functionality
-    │   ├── __init__.py         # Package initialization
-    │   └── agent.py            # Agent implementation with multi-provider support
+    ├── core/                   # Core functionality  
+    │   └── agent.py            # Agent implementation (~200 lines core logic)
     ├── config/                 # Configuration
-    │   ├── __init__.py         # Package initialization
     │   ├── settings.py         # Settings manager with provider configuration
-    │   └── agent_instructions.yaml  # Agent behavior and personality definitions
+    │   └── agent_instructions.yaml  # System prompt defining agent behavior
     └── interfaces/             # User interfaces
-        ├── __init__.py         # Package initialization
         └── telegram/           # Telegram interface
-            ├── __init__.py     # Package initialization
             └── bot.py          # Telegram bot implementation
 ```
 
+## 🎯 BlockBeak in Action
+
+Let's look at some examples of what BlockBeak can do when tapping into the Heurist Mesh agent ecosystem:
+
+### Example 1: Deep Research on EIPs
+Ask **"Do a deep dive on EIPs related to intent"** and BlockBeak returns structured details on EIP-7521, ERC-4337, relevant links, and governance discussions.
+
+### Example 2: Token Analysis  
+Ask **"Analyze HEU token"** and receive cross-validated market data, liquidity insights, social media sentiment, and official references—all aggregated by multiple agents.
+
+### Example 3: Market Context
+Ask **"Why did PEPE pump today?"** and get comprehensive analysis combining price data, social sentiment, whale activity, and breaking news.
+
+## 🚀 Why This Matters
+
+- **Development Simplicity**: Build powerful AI tools with ~200 lines of code
+- **Seamless Integration**: Heurist Mesh works out-of-the-box with OpenAI Agents SDK  
+- **Tool Composability**: Mix & match agents to cover any crypto research need
+- **Prompt-Driven Customization**: Change behavior via prompts, not code refactors
+
 ## 🔧 Configuration
 
-### Agent Behavior Customization
+## 🔄 Try It Yourself
 
-The agent's behavior is defined in `src/config/agent_instructions.yaml`. Key features include:
-
-- **Dynamic Personality System**: Adapts between Analyst, Pragmatic Pro, and The Pulse modes
-- **Crypto Analysis Capabilities**: Comprehensive token research and market analysis
-- **Autonomous Tool Usage**: Intelligent tool selection and iterative refinement
-- **Heurist AI Token Knowledge**: Built-in knowledge about the Heurist project
+1. **Clone the repo**: `git clone [repository-url]`
+2. **Configure your MCP server**: Set `MCP_SSE_URL=https://mcp.heurist.ai/your-endpoint`
+3. **Customize the system prompt**: Edit `src/config/agent_instructions.yaml` for your use case
+4. **Deploy to your Telegram group**: Set `TELEGRAM_BOT_TOKEN` and run `uv run python main.py`
 
 ### Environment Variables Reference
 
