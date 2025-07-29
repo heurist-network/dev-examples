@@ -29,6 +29,8 @@ class TelegramBotHandler:
         self.agent_manager = create_agent_manager()
         
         self.active_users = {}
+        # Track conversation threads: message_id -> conversation_context
+        self.conversation_threads = {}
         
         self.bot = telebot.TeleBot(self.token)
         self.register_handlers()
@@ -39,7 +41,8 @@ class TelegramBotHandler:
         commands = [
             telebot.types.BotCommand("help", "Show help message"),
             telebot.types.BotCommand("model", "Show current AI model settings"),
-            telebot.types.BotCommand("ask", "Ask me a question")
+            telebot.types.BotCommand("ask", "Ask me a question"),
+            telebot.types.BotCommand("clear", "Clear conversation history")
         ]
         self.bot.set_my_commands(commands)
     
@@ -70,7 +73,8 @@ class TelegramBotHandler:
             self.active_users[user_id] = {
                 "name": first_name,
                 "username": username,
-                "history": []
+                "history": [],
+                "agent_context": {}  # Store agent context for this user
             }
         return self.active_users[user_id]
     
@@ -113,6 +117,45 @@ class TelegramBotHandler:
     
     def register_handlers(self):
         """Register message handlers"""
+        
+        # Handler for replies to bot messages
+        @self.bot.message_handler(func=lambda message: message.reply_to_message is not None and 
+                                                      message.reply_to_message.from_user.id == self.bot.get_me().id)
+        def handle_reply(message):
+            if not self.is_authorized_chat(message):
+                return
+            
+            user_id = message.from_user.id
+            logger.info(f"Processing reply from user {message.from_user.username or user_id}")
+            
+            # Get or create user session
+            self.get_or_create_user_session(
+                user_id,
+                message.from_user.first_name,
+                message.from_user.username
+            )
+            
+            # Check if this is a reply to a known bot message
+            replied_msg_id = message.reply_to_message.message_id
+            if replied_msg_id in self.conversation_threads:
+                thread_info = self.conversation_threads[replied_msg_id]
+                # Verify the user is the same as the original conversation
+                if thread_info["user_id"] == user_id:
+                    try:
+                        self.process_message(message, is_reply=True)
+                    except Exception as e:
+                        logger.error(f"Error in reply handler: {str(e)}", exc_info=True)
+                        self.send_error_reply(message, "Sorry, there was an error processing your follow-up question.")
+                else:
+                    logger.warning(f"User {user_id} tried to reply to another user's conversation")
+                    self.bot.reply_to(message, "You can only continue your own conversations.")
+            else:
+                # This is a reply to an older message, still process it as a follow-up
+                try:
+                    self.process_message(message, is_reply=True)
+                except Exception as e:
+                    logger.error(f"Error in reply handler: {str(e)}", exc_info=True)
+                    self.send_error_reply(message, "Sorry, there was an error processing your follow-up question.")
 
         
         @self.bot.message_handler(commands=['help'])
@@ -125,7 +168,9 @@ class TelegramBotHandler:
                 "Here are the available commands:\n"
                 "/help - Show this help message\n"
                 "/model - Show the current AI model\n"
-                "/ask - Ask me a question (e.g., /ask Any bullish news about ETH?)"
+                "/ask - Ask me a question (e.g., /ask Any bullish news about ETH?)\n"
+                "/clear - Clear your conversation history\n\n"
+                "💡 Tip: You can reply to any of my messages to continue the conversation!"
             )
         
         @self.bot.message_handler(commands=['model'])
@@ -139,6 +184,20 @@ class TelegramBotHandler:
                 f"Temperature: {self.agent_manager.temperature}\n"
                 f"Max tokens: {self.agent_manager.max_tokens}"
             )
+        
+        @self.bot.message_handler(commands=['clear'])
+        def clear_command(message):
+            if not self.is_authorized_chat(message):
+                return
+                
+            user_id = message.from_user.id
+            if user_id in self.active_users:
+                self.active_users[user_id]["history"] = []
+                self.active_users[user_id]["agent_context"] = {}
+                self.bot.reply_to(message, "✅ Your conversation history has been cleared.")
+                logger.info(f"Cleared conversation history for user {user_id}")
+            else:
+                self.bot.reply_to(message, "No conversation history to clear.")
         
         @self.bot.message_handler(commands=['ask'])
         def ask_command(message):
@@ -169,15 +228,41 @@ class TelegramBotHandler:
                 logger.error(f"Error in ask_command handler: {str(e)}", exc_info=True)
                 self.send_error_reply(message, "Sorry, there was an error processing your question. Please try again.")
     
-    async def process_question_async(self, question_text):
+    async def process_question_async(self, question_text, conversation_history=None, agent_context=None):
+        # Build context with conversation history
+        context_update = {}
+        if agent_context:
+            context_update.update(agent_context)
+        
+        if conversation_history and len(conversation_history) > 0:
+            # Format conversation history for the agent
+            history_text = ""
+            for entry in conversation_history[-10:]:  # Last 10 messages for context
+                role = entry["role"]
+                content = entry["content"]
+                if role == "user":
+                    history_text += f"User: {content}\n"
+                else:
+                    history_text += f"Assistant: {content}\n"
+            
+            # Add formatted history to context
+            context_update["conversation_history"] = history_text.strip()
+            
+            # Prepend conversation context to the current question
+            question_with_context = f"Previous conversation:\n{history_text}\n\nCurrent question: {question_text}"
+        else:
+            question_with_context = question_text
+        
         agent_response_data = await self.agent_manager.process_message(
-            message=question_text,
-            streaming=False
+            message=question_with_context,
+            streaming=False,
+            context_update=context_update
         )
         return agent_response_data
 
-    def process_message(self, message):
+    def process_message(self, message, is_reply=False):
         user_id = message.from_user.id
+        user_session = self.active_users.get(user_id, {})
 
         # Handle entities if present
         if hasattr(message, 'entities') and message.entities:
@@ -185,26 +270,40 @@ class TelegramBotHandler:
         else:
             question_text = message.text
         
-        # Remove the "/ask" command from the message
-        question_text = re.sub(r'^\/ask\s+', '', question_text)
-        logger.info(f"Question extracted: '{question_text}'")
+        # Remove the "/ask" command from the message if it's not a reply
+        if not is_reply:
+            question_text = re.sub(r'^\/ask\s+', '', question_text)
+        
+        logger.info(f"Question extracted: '{question_text}' (is_reply: {is_reply})")
 
-        self.active_users[user_id]["history"].append({"role": "user", "content": question_text})
+        # Add user message to history
+        user_session["history"].append({"role": "user", "content": question_text})
         
         waiting_msg = self.bot.reply_to(message, "Processing your request...")
         self.bot.send_chat_action(message.chat.id, 'typing')
 
         loop = asyncio.new_event_loop()
         try:
+            # Pass conversation history and context for replies
             agent_response_data = loop.run_until_complete(
-                self.process_question_async(question_text)
+                self.process_question_async(
+                    question_text,
+                    conversation_history=user_session.get("history", []) if is_reply else None,
+                    agent_context=user_session.get("agent_context", {})
+                )
             )
             
             actual_output = agent_response_data["output"]
             trace_url = agent_response_data["trace_url"]
 
             logger.debug(f"Trace URL: {trace_url}")
-            self.active_users[user_id]["history"].append({"role": "assistant", "content": actual_output})
+            
+            # Add assistant response to history
+            user_session["history"].append({"role": "assistant", "content": actual_output})
+            
+            # Update agent context if provided
+            if "context" in agent_response_data:
+                user_session["agent_context"].update(agent_response_data["context"])
             
             try:
                 self.bot.delete_message(message.chat.id, waiting_msg.message_id)
@@ -212,7 +311,15 @@ class TelegramBotHandler:
                 logger.warning(f"Failed to delete waiting message: {e}")
 
             logger.debug(f"Response preview: {actual_output[:100]}...")
-            self.bot.reply_to(message, actual_output)
+            bot_reply = self.bot.reply_to(message, actual_output)
+            
+            # Store the conversation thread
+            self.conversation_threads[bot_reply.message_id] = {
+                "user_id": user_id,
+                "chat_id": message.chat.id,
+                "timestamp": bot_reply.date
+            }
+            
         except Exception as e:
             logger.error(f"Error in process_message: {type(e).__name__}: {str(e)}", exc_info=True)
             self.send_error_reply(message, f"Sorry, an error occurred: {str(e)[:200]}")
