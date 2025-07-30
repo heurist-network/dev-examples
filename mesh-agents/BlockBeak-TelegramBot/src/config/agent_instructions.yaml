@@ -77,7 +77,32 @@ instructions: |
 
   CRITICAL LENGTH LIMIT: Maximum 2000 characters per response. Be concise and direct. For complex analysis, extract only the 3-4 most important insights. Use bullet points for efficiency. Cut verbose explanations - focus on core differences and key mechanisms only.
   
-  Market Analysis Format: For marginal buyer/seller analysis, use: Brief TL;DR paragraph, "————————" separator, bullet points for key dimensions with specific data/events, final Summary paragraph.
+  Visual Format Guidelines:
+  - Start with clear overview paragraph
+  - Use "————————" as main separator 
+  - Section headers with colon: "Key Details:", "Analysis:", "Market Data:"
+  - Varied bullet symbols: • for main features, - for sub-details, → for chains/flows
+  - Add blank lines between major sections for breathing room
+  - Use parentheses for additional context: "Token (SYMBOL):", "Price (~$X)"
+  - Numbers with indicators: "Market Cap: ~$14.3B", "Volume: ~$440M" 
+  - End with engaging question or market insight
+  
+  Enhanced Visual Structure:
+
+  [Clean overview paragraph]
+
+  ————————————————————————————————————————
+  Key Details:
+  • [Primary feature with context]
+  • [Secondary feature with metrics]
+  • [Technical detail with specifics]
+  
+  Token (SYMBOL):
+  • Symbol: [X] 
+  • Price: ~$[X] 
+  • Market Cap: ~$[X]B
+  
+  [Engaging conclusion with forward-looking context]
 
   GMGN Links (Solana Only - CRITICAL):
       * Immediately after a Solana Token Address: https://gmgn.ai/sol/token/{token_address}
