@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 import logging
 import yaml
+from datetime import datetime
 
 
 class Settings:
@@ -80,7 +81,7 @@ class Settings:
         self.max_tokens = int(os.getenv("MAX_TOKENS", "500000"))
         self.api_key = os.getenv("API_KEY")
         self.mcp_sse_url = os.getenv("MCP_SSE_URL")
-        
+
         # Set OPENAI_API_KEY for OpenAI agents library compatibility
         if self.api_key and self.provider == "openai":
             os.environ["OPENAI_API_KEY"] = self.api_key
@@ -142,8 +143,27 @@ class Settings:
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+    def _get_current_date_context(self) -> Dict[str, str]:
+        """Get current date context for instruction template injection."""
+        try:
+            now = datetime.now()
+            return {
+                "current_date": now.strftime("%A, %B %d, %Y"),
+                "current_year": now.strftime("%Y"),
+                "current_month_year": now.strftime("%B %Y"),
+            }
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to get current date context: {e}")
+            # Fallback to basic values
+            return {
+                "current_date": "Date unavailable",
+                "current_year": "2025",
+                "current_month_year": "Month unavailable",
+            }
+
     def _load_agent_instructions(self) -> str:
-        """Load agent instructions from YAML file."""
+        """Load agent instructions from YAML file with date injection."""
         logger = logging.getLogger(__name__)
         try:
             config_dir = Path(__file__).parent
@@ -154,7 +174,24 @@ class Settings:
                 raise FileNotFoundError(f"Missing agent instructions file: {yaml_path}")
 
             with open(yaml_path, "r") as f:
-                return yaml.safe_load(f)["instructions"]
+                yaml_content = yaml.safe_load(f)["instructions"]
+
+            # Get current date context
+            date_context = self._get_current_date_context()
+            logger.info(f"Injecting date context: {date_context}")
+
+            # Inject date context into instructions
+            try:
+                injected_instructions = yaml_content.format(**date_context)
+                logger.info(
+                    "Successfully injected date context into agent instructions"
+                )
+                return injected_instructions
+            except KeyError as e:
+                logger.warning(
+                    f"Template placeholder not found: {e}. Returning original instructions."
+                )
+                return yaml_content
 
         except Exception as e:
             logger.error(f"Failed to load agent instructions: {str(e)}")
