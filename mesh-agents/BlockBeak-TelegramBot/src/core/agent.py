@@ -3,7 +3,7 @@
 import asyncio
 import random
 import logging
-from typing import AsyncGenerator, Dict, Optional, Union, Callable, Any
+from typing import AsyncGenerator, Dict, Optional, Union, Callable, Any, Literal
 from openai import OpenAI, OpenAIError
 from agents import Agent as OpenAIAgent, Runner, gen_trace_id, trace, ModelSettings
 from agents.mcp import MCPServerSse
@@ -11,6 +11,120 @@ from agents.extensions.models.litellm_model import LitellmModel
 from src.config.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+# Agent modes
+AgentMode = Literal["normal", "deep"]
+
+def detect_mode(message: str) -> AgentMode:
+    """
+    Detect which agent mode to use based on message content.
+    Supports multiple languages.
+    
+    Returns "deep" if message contains keywords indicating need for deep analysis,
+    otherwise returns "normal" for standard responses.
+    """
+    # Multi-language deep mode keywords
+    deep_keywords = {
+        # English
+        "deep", "analyze", "analysis", "research", "comprehensive", "detailed",
+        "in-depth", "thorough", "extensive", "investigate", "examination",
+        
+        # Chinese (Simplified & Traditional)
+        "深入", "分析", "研究", "全面", "详细", "深度", "透彻", "详尽",
+        "調研", "探究", "剖析", "综合分析", "深入分析", "全面分析",
+        "詳細", "深度分析", "徹底", "詳盡", "綜合分析",
+        
+        # Japanese
+        "詳しく", "分析", "研究", "詳細", "深く", "徹底的", "包括的",
+        "調査", "検証", "深掘り", "詳しい分析",
+        
+        # Korean
+        "심층", "분석", "연구", "상세", "자세한", "종합적", "심도있는",
+        "깊이있는", "면밀한", "철저한",
+        
+        # Spanish
+        "profundo", "analizar", "análisis", "investigar", "investigación",
+        "detallado", "exhaustivo", "comprensivo", "minucioso",
+        
+        # French
+        "approfondi", "analyser", "analyse", "recherche", "détaillé",
+        "exhaustif", "complet", "minutieux",
+        
+        # German
+        "tiefgehend", "analysieren", "analyse", "forschung", "umfassend",
+        "detailliert", "gründlich", "ausführlich",
+        
+        # Russian
+        "глубокий", "анализ", "исследование", "подробный", "детальный",
+        "всесторонний", "тщательный", "углубленный",
+        
+        # Portuguese
+        "profundo", "analisar", "análise", "pesquisa", "detalhado",
+        "abrangente", "minucioso", "aprofundado",
+        
+        # Arabic
+        "عميق", "تحليل", "بحث", "شامل", "مفصل", "دراسة",
+        
+        # Hindi
+        "गहन", "विश्लेषण", "अनुसंधान", "विस्तृत", "व्यापक",
+    }
+    
+    message_lower = message.lower()
+    
+    # Check for any deep mode keyword in the message
+    for keyword in deep_keywords:
+        if keyword in message_lower:
+            logger.info(f"Deep mode activated - keyword '{keyword}' detected")
+            return "deep"
+    
+    # Additional heuristics for non-keyword based detection
+    # Check for question complexity indicators
+    complexity_indicators = [
+        # Multiple questions (indicated by multiple question marks)
+        message.count("?") >= 2,
+        message.count("？") >= 2,  # Chinese/Japanese question mark
+        
+        # Long messages often require deeper analysis
+        len(message) > 200,
+        
+        # Comparison requests (vs, versus, compare, etc.)
+        any(indicator in message_lower for indicator in [
+            " vs ", " versus ", "compare", "difference between",
+            "对比", "比较", "相比", "区别",  # Chinese
+            "比べ", "違い",  # Japanese
+            "비교", "차이",  # Korean
+            "comparar", "diferencia",  # Spanish
+            "comparer", "différence",  # French
+        ]),
+        
+        # "Why" questions often need deeper analysis
+        any(why in message_lower for why in [
+            "why", "how come", "reason",
+            "为什么", "为何", "怎么会",  # Chinese
+            "なぜ", "どうして",  # Japanese
+            "왜", "어째서",  # Korean
+            "por qué", "por que",  # Spanish
+            "pourquoi",  # French
+            "warum",  # German
+            "почему",  # Russian
+        ]),
+        
+        # Technical mechanism questions
+        any(tech in message_lower for tech in [
+            "mechanism", "how does", "how it works", "architecture",
+            "机制", "原理", "如何工作", "架构",  # Chinese
+            "仕組み", "メカニズム",  # Japanese
+            "메커니즘", "구조",  # Korean
+        ]),
+    ]
+    
+    # If any complexity indicator is true, consider deep mode
+    if any(complexity_indicators):
+        logger.info("Deep mode activated - complexity indicators detected")
+        return "deep"
+    
+    logger.info("Normal mode selected")
+    return "normal"
 
 
 class AgentError(Exception):
@@ -57,7 +171,7 @@ class RetryConfig:
 
 
 class AgentManager:
-    """Core Agent Manager class that handles agent interactions."""
+    """Core Agent Manager class that handles agent interactions with dual-mode support."""
 
     def __init__(
         self,
@@ -66,6 +180,8 @@ class AgentManager:
         max_tokens: int,
         mcp_sse_url: str,
         instructions: Optional[str] = None,
+        instructions_normal: Optional[str] = None,
+        instructions_deep: Optional[str] = None,
         retry_config: Optional[RetryConfig] = None,
         context: Optional[Dict[str, Any]] = None,
         enable_mcp_cache: bool = True,
@@ -91,7 +207,12 @@ class AgentManager:
             client_session_timeout_seconds=60,
         )
 
-        self.instructions = instructions or Settings().get_agent_instructions()
+        # Load instructions for both modes
+        settings = Settings()
+        self.instructions_normal = instructions_normal or settings.get_agent_instructions("normal")
+        self.instructions_deep = instructions_deep or settings.get_agent_instructions("deep")
+        # Keep backward compatibility
+        self.instructions = instructions or self.instructions_normal
         self.retry_config = retry_config or RetryConfig()
 
         # Only initialize OpenAI client for OpenAI provider
@@ -148,23 +269,48 @@ class AgentManager:
         message: str,
         streaming: bool = False,
         context_update: Optional[Dict[str, Any]] = None,
+        force_mode: Optional[AgentMode] = None,
     ) -> Union[Dict[str, str], AsyncGenerator[str, None]]:
-        """Process a user message and return the agent's response"""
+        """Process a user message and return the agent's response
+        
+        Args:
+            message: The user's message
+            streaming: Whether to stream the response
+            context_update: Additional context to update
+            force_mode: Force a specific mode ('normal' or 'deep'), otherwise auto-detect
+        """
         if context_update:
             self.context.update(context_update)
 
         self.trace_id = gen_trace_id()
         logger.debug(f"Generated trace ID: {self.trace_id}")
 
-        # Create agent
-        model_settings = ModelSettings(
-            temperature=self.temperature,
-            max_tokens=min(self.max_tokens, 10000),
-        )
+        # Detect mode based on message content or use forced mode
+        mode = force_mode or detect_mode(message)
+        logger.info(f"Using {mode} mode for processing message")
+        
+        # Select instructions based on mode
+        instructions = self.instructions_deep if mode == "deep" else self.instructions_normal
+        
+        # Adjust model settings based on mode
+        if mode == "deep":
+            # Deep mode: higher temperature for more creative exploration
+            model_settings = ModelSettings(
+                temperature=min(self.temperature * 1.5, 0.7),  # Slightly higher temp for exploration
+                max_tokens=min(self.max_tokens, 15000),  # More tokens for comprehensive analysis
+            )
+            agent_name = "DeepAnalyst"
+        else:
+            # Normal mode: standard settings
+            model_settings = ModelSettings(
+                temperature=self.temperature,
+                max_tokens=min(self.max_tokens, 10000),
+            )
+            agent_name = "Assistant"
 
         agent = OpenAIAgent(
-            name="Assistant",
-            instructions=self.instructions,
+            name=agent_name,
+            instructions=instructions,
             mcp_servers=[self.mcp_server],
             model=self._get_model_instance(),
             model_settings=model_settings,
@@ -189,13 +335,17 @@ class AgentManager:
                     if streaming:
 
                         async def stream_response():
-                            yield f"View trace: {trace_url}\n\n"
+                            yield f"[{mode.upper()} MODE] View trace: {trace_url}\n\n"
                             for chunk in result.final_output.split():
                                 yield chunk + " "
 
                         return stream_response()
                     else:
-                        return {"output": result.final_output, "trace_url": trace_url}
+                        return {
+                            "output": result.final_output, 
+                            "trace_url": trace_url,
+                            "mode": mode
+                        }
                 except Exception as e:
                     logger.error(f"Error processing message: {str(e)}")
                     raise AgentError(f"Failed to process message: {str(e)}")
@@ -228,7 +378,7 @@ def create_agent_manager(
     agent_config_override: Optional[Dict[str, Any]] = None, **kwargs
 ) -> AgentManager:
     """
-    Create an AgentManager instance.
+    Create an AgentManager instance with dual-mode support.
     It fetches its core configuration (model, temp, tokens, mcp_url)
     from Settings, but allows overrides.
 
@@ -236,7 +386,8 @@ def create_agent_manager(
         agent_config_override: Optional dict to override specific agent config values
                                (model, temperature, max_tokens, mcp_sse_url).
         **kwargs: Additional keyword arguments to pass directly to AgentManager constructor
-                  (e.g., instructions, retry_config, context, enable_mcp_cache).
+                  (e.g., instructions, instructions_normal, instructions_deep, 
+                   retry_config, context, enable_mcp_cache).
     """
 
     config = Settings().get_openai_config()

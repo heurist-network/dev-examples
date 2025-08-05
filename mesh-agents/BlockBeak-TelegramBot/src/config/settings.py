@@ -167,10 +167,32 @@ class Settings:
 
     def _load_agent_instructions(self) -> str:
         """Load agent instructions from YAML file with date injection."""
+        # For backward compatibility, load the original instructions file
+        return self._load_instructions_by_mode("normal")
+    
+    def _load_instructions_by_mode(self, mode: str = "normal") -> str:
+        """Load agent instructions for specific mode from YAML file with date injection.
+        
+        Args:
+            mode: Either "normal" or "deep" mode
+            
+        Returns:
+            Instructions string with injected date context
+        """
         logger = logging.getLogger(__name__)
         try:
             config_dir = Path(__file__).parent
-            yaml_path = config_dir / "agent_instructions.yaml"
+            
+            # Try mode-specific file first, fallback to original
+            if mode in ["normal", "deep"]:
+                yaml_path = config_dir / f"agent_instructions_{mode}.yaml"
+            else:
+                yaml_path = config_dir / "agent_instructions.yaml"
+            
+            # Fallback to original file if mode-specific doesn't exist
+            if not yaml_path.exists():
+                yaml_path = config_dir / "agent_instructions.yaml"
+                logger.info(f"Mode-specific instructions not found, using default: {yaml_path}")
 
             if not yaml_path.exists():
                 logger.error(f"Agent instructions file not found at: {yaml_path}")
@@ -181,13 +203,13 @@ class Settings:
 
             # Get current date context
             date_context = self._get_current_date_context()
-            logger.info(f"Injecting date context: {date_context}")
+            logger.info(f"Injecting date context into {mode} mode instructions: {date_context}")
 
             # Inject date context into instructions
             try:
                 injected_instructions = yaml_content.format(**date_context)
                 logger.info(
-                    "Successfully injected date context into agent instructions"
+                    f"Successfully injected date context into {mode} mode agent instructions"
                 )
                 return injected_instructions
             except KeyError as e:
@@ -197,7 +219,7 @@ class Settings:
                 return yaml_content
 
         except Exception as e:
-            logger.error(f"Failed to load agent instructions: {str(e)}")
+            logger.error(f"Failed to load agent instructions for {mode} mode: {str(e)}")
             raise
 
     def get_openai_config(self) -> Dict[str, Any]:
@@ -250,9 +272,18 @@ class Settings:
         telegram_cfg = self.get_telegram_config()
         return bool(telegram_cfg["token"] and telegram_cfg["chat_id"])
 
-    def get_agent_instructions(self) -> str:
-        """Get the agent instructions."""
-        return self.agent_instructions
+    def get_agent_instructions(self, mode: str = "normal") -> str:
+        """Get the agent instructions for specified mode.
+        
+        Args:
+            mode: Either "normal" or "deep" mode
+            
+        Returns:
+            Instructions string for the specified mode
+        """
+        if mode not in ["normal", "deep"]:
+            mode = "normal"
+        return self._load_instructions_by_mode(mode)
 
     def get_xmtp_config(self) -> Dict[str, Any]:
         """Get the XMTP configuration settings."""
