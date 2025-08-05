@@ -27,6 +27,7 @@ class XMTPMessage(BaseModel):
     conversationId: str
     sender: str
     message: str
+    replyContext: Optional[str] = None
     meta: Optional[Dict[str, Any]] = None
 
 class AgentResponse(BaseModel):
@@ -62,8 +63,17 @@ async def process_xmtp_message(message: XMTPMessage):
         logger.info(f"Processing message from {message.sender} in conversation {message.conversationId}")
         logger.debug(f"Message content: {message.message}")
         
+        # Check if this is a reply to another message
+        if message.replyContext:
+            logger.info(f"Message is a reply to: {message.replyContext}")
+        
         # Get or create agent manager for this conversation
         agent_manager = get_or_create_agent_manager(message.conversationId)
+        
+        # Prepare the message content with reply context if available
+        processed_message = message.message
+        if message.replyContext:
+            processed_message = f"[Replying to: \"{message.replyContext}\"]\n{message.message}"
         
         # Prepare context update with sender and conversation info
         context_update = {
@@ -71,13 +81,17 @@ async def process_xmtp_message(message: XMTPMessage):
             "sender": message.sender,
         }
         
+        # Add reply context to metadata if available
+        if message.replyContext:
+            context_update["reply_context"] = message.replyContext
+        
         # Add any additional metadata to context
         if message.meta:
             context_update.update(message.meta)
         
         # Process the message through the agent
         result = await agent_manager.process_message(
-            message=message.message,
+            message=processed_message,
             streaming=False,
             context_update=context_update
         )

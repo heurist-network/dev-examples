@@ -10,6 +10,11 @@ import {
   ContentTypeReaction,
   type Reaction,
 } from "@xmtp/content-type-reaction";
+import {
+  ReplyCodec,
+  ContentTypeReply,
+  type Reply,
+} from "@xmtp/content-type-reply";
 
 /* Get the wallet key associated to the public key of
  * the agent and the encryption key for the local db
@@ -26,9 +31,31 @@ const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
 const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8000/inbox";
 
 /**
+ * Get the original message that is being replied to
+ */
+async function getReferencedMessage(conversation: any, messageId: string): Promise<string | null> {
+  try {
+    // Get all messages in the conversation
+    const messages = await conversation.messages();
+    
+    // Find the message with the matching ID
+    const referencedMessage = messages.find((msg: any) => msg.id === messageId);
+    
+    if (referencedMessage && referencedMessage.contentType?.typeId === "text") {
+      return referencedMessage.content as string;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error getting referenced message:", error);
+    return null;
+  }
+}
+
+/**
  * Call the Python agent API with exponential backoff retry
  */
-async function callAgentAPI(conversationId: string, sender: string, message: string, retries = 3): Promise<string> {
+async function callAgentAPI(conversationId: string, sender: string, message: string, replyContext?: string, retries = 3): Promise<string> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       console.log(`Calling agent API (attempt ${attempt}/${retries})...`);
@@ -42,6 +69,7 @@ async function callAgentAPI(conversationId: string, sender: string, message: str
           conversationId,
           sender,
           message,
+          replyContext: replyContext || null,
         }),
         // 30 second timeout
         signal: AbortSignal.timeout(30000),
@@ -87,7 +115,7 @@ async function main() {
   const client = await Client.create(signer, {
     dbEncryptionKey,
     env: XMTP_ENV as XmtpEnv,
-    codecs: [new ReactionCodec()],
+    codecs: [new ReactionCodec(), new ReplyCodec()],
   });
 
   void logAgentDetails(client as any);
@@ -101,17 +129,45 @@ async function main() {
     console.log("Waiting for messages...");
     const stream = client.conversations.streamAllMessages();
     for await (const message of await stream) {
-      /* Ignore messages from the same agent or non-text messages */
-      if (
-        message.senderInboxId.toLowerCase() === client.inboxId.toLowerCase() ||
-        message.contentType?.typeId !== "text"
-      ) {
+      /* Ignore messages from the same agent */
+      if (message.senderInboxId.toLowerCase() === client.inboxId.toLowerCase()) {
         continue;
       }
 
-      console.log(
-        `Received message: ${message.content as string} by ${message.senderInboxId}`,
-      );
+      /* Handle both text messages and reply messages */
+      if (message.contentType?.typeId !== "text" && !message.contentType?.sameAs(ContentTypeReply)) {
+        continue;
+      }
+
+      let messageContent: string;
+      let replyContext: string | null = null;
+      
+      // Check if this is a reply message
+      if (message.contentType?.sameAs(ContentTypeReply)) {
+        const reply = message.content as Reply;
+        messageContent = reply.content as string;
+        
+        console.log(
+          `Received reply: "${messageContent}" by ${message.senderInboxId} (replying to message ID: ${reply.reference})`,
+        );
+        
+        // Get the original message being replied to
+        const conversation = await client.conversations.getConversationById(
+          message.conversationId,
+        );
+        if (conversation) {
+          replyContext = await getReferencedMessage(conversation, reply.reference);
+          if (replyContext) {
+            console.log(`Original message being replied to: "${replyContext}"`);
+          }
+        }
+      } else {
+        // Regular text message
+        messageContent = message.content as string;
+        console.log(
+          `Received message: ${messageContent} by ${message.senderInboxId}`,
+        );
+      }
 
       /* Get the conversation from the local db */
       const conversation = await client.conversations.getConversationById(
@@ -143,7 +199,8 @@ async function main() {
         const response = await callAgentAPI(
           message.conversationId,
           message.senderInboxId,
-          message.content as string
+          messageContent,
+          replyContext || undefined
         );
 
         console.log(`Sending agent response: ${response.substring(0, 100)}...`);
