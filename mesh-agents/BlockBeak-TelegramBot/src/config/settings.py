@@ -94,6 +94,9 @@ class Settings:
         logger.info(f"Raw TELEGRAM_CHAT_ID from os.environ: '{chat_id_str}'")
         self.telegram_chat_id = self._parse_chat_id(chat_id_str)
 
+        # XMTP settings
+        self.xmtp_agent_endpoint = os.getenv("XMTP_AGENT_ENDPOINT", "http://127.0.0.1:8000")
+
         self.agent_instructions = self._load_agent_instructions()
 
         logger.info(f"Configuration loaded successfully for provider: {self.provider}")
@@ -250,3 +253,7 @@ class Settings:
     def get_agent_instructions(self) -> str:
         """Get the agent instructions."""
         return self.agent_instructions
+
+    def get_xmtp_config(self) -> Dict[str, Any]:
+        """Get the XMTP configuration settings."""
+        return {"agent_endpoint": self.xmtp_agent_endpoint}
