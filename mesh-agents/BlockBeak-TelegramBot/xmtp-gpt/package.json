@@ -11,6 +11,7 @@
     "start": "tsx index.ts"
   },
   "dependencies": {
+    "@xmtp/content-type-reaction": "^2.0.2",
     "@xmtp/node-sdk": "^4.0.1",
     "uint8arrays": "^5.1.0",
     "viem": "^2.33.2"
