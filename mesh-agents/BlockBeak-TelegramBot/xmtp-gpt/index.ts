@@ -5,6 +5,11 @@ import {
   validateEnvironment,
 } from "./helpers/client.js";
 import { Client, type XmtpEnv } from "@xmtp/node-sdk";
+import {
+  ReactionCodec,
+  ContentTypeReaction,
+  type Reaction,
+} from "@xmtp/content-type-reaction";
 
 /* Get the wallet key associated to the public key of
  * the agent and the encryption key for the local db
@@ -82,9 +87,10 @@ async function main() {
   const client = await Client.create(signer, {
     dbEncryptionKey,
     env: XMTP_ENV as XmtpEnv,
+    codecs: [new ReactionCodec()],
   });
 
-  void logAgentDetails(client);
+  void logAgentDetails(client as any);
 
   /* Sync the conversations from the network to update the local db */
   console.log("✓ Syncing conversations...");
@@ -119,6 +125,20 @@ async function main() {
       }
 
       try {
+        /* Send a 👀 reaction to indicate message received and processing */
+        console.log("Sending 👀 reaction to indicate message received...");
+        
+        // Send proper XMTP reaction using the official content type
+        const reaction: Reaction = {
+          reference: message.id,
+          action: "added" as const,
+          content: "👀",
+          schema: "unicode" as const,
+        };
+        
+        await conversation.send(reaction, ContentTypeReaction);
+        console.log("👀 reaction sent successfully");
+
         /* Call the Python agent API to get the response */
         const response = await callAgentAPI(
           message.conversationId,
