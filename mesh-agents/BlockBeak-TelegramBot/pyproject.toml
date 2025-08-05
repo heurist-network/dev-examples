@@ -10,6 +10,8 @@ dependencies = [
     "pyTelegramBotAPI>=4.14.0",
     "openai-agents[litellm]==0.0.14",
     "pyyaml>=6.0.1",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
 ]
 requires-python = ">=3.9"
 
