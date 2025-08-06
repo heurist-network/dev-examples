@@ -72,7 +72,7 @@ async function callAgentAPI(conversationId: string, sender: string, message: str
           replyContext: replyContext || null,
         }),
         // 30 second timeout
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(60000),
       });
 
       if (!response.ok) {
