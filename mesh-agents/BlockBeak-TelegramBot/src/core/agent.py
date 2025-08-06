@@ -143,7 +143,7 @@ class RetryConfig:
 
     def __init__(
         self,
-        max_retries: int = 3,
+        max_retries: int = 1,
         base_delay: float = 1.0,
         max_delay: float = 60.0,
         timeout: Optional[float] = None,
