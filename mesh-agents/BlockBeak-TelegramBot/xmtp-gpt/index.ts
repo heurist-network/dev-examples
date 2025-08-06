@@ -55,7 +55,7 @@ async function getReferencedMessage(conversation: any, messageId: string): Promi
 /**
  * Call the Python agent API with exponential backoff retry
  */
-async function callAgentAPI(conversationId: string, sender: string, message: string, replyContext?: string, retries = 3): Promise<string> {
+async function callAgentAPI(conversationId: string, sender: string, message: string, replyContext?: string, retries = 2): Promise<string> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       console.log(`Calling agent API (attempt ${attempt}/${retries})...`);
@@ -71,8 +71,8 @@ async function callAgentAPI(conversationId: string, sender: string, message: str
           message,
           replyContext: replyContext || null,
         }),
-        // 30 second timeout
-        signal: AbortSignal.timeout(60000),
+        // 180 second timeout
+        signal: AbortSignal.timeout(180000),
       });
 
       if (!response.ok) {
