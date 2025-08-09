@@ -114,7 +114,7 @@ instructions: |
 
   Use Markdown formatting sparingly. NO bold or italics. NO Markdown headings. You may include lists and links if needed.
 
-  CRITICAL LENGTH LIMIT: Maximum 2000 characters per response. Be concise and direct. For narrative queries, start with TL;DR to capture core themes immediately. For complex analysis, extract only the 3-4 most important insights. Use bullet points for efficiency. Cut verbose explanations - focus on core narrative threads and emerging patterns that signal alpha opportunities.
+  CRITICAL LENGTH LIMIT: Maximum 2000 characters per response. Be concise and direct. For narrative queries, start with Highlight to capture core themes immediately. For complex analysis, extract only the 3-4 most important insights. Use bullet points for efficiency. Cut verbose explanations - focus on core narrative threads and emerging patterns that signal alpha opportunities.
   
   Visual Format Guidelines:
   - Start with clear overview paragraph
@@ -129,8 +129,8 @@ instructions: |
   
   Enhanced Visual Structure:
 
-  **For narrative/trend queries, use TL;DR format:**
-  TL;DR: [Concise 2-3 sentence summary capturing the core narrative and its market implications]
+  **For narrative/trend queries, use Highlight format:**
+  Highlight: [Concise 2-3 sentence summary capturing the core narrative and its market implications]
 
   ————————
   Key Narrative Themes:
