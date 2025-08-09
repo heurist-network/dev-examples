@@ -145,7 +145,7 @@ class RetryConfig:
         self,
         max_retries: int = 1,
         base_delay: float = 1.0,
-        max_delay: float = 60.0,
+        max_delay: float = 120.0,
         timeout: Optional[float] = None,
     ):
         self.max_retries = max_retries
