@@ -4,7 +4,7 @@ import {
   logAgentDetails,
   validateEnvironment,
 } from "./helpers/client.js";
-import { Client, type XmtpEnv } from "@xmtp/node-sdk";
+import { Client, type XmtpEnv, Group } from "@xmtp/node-sdk";
 import {
   ReactionCodec,
   ContentTypeReaction,
@@ -28,7 +28,30 @@ const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
   ]);
 
 /* Default agent endpoint if not provided */
-const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8000/inbox";
+const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8001/inbox";
+
+/**
+ * Build possible @mention strings for this agent based on its wallet address.
+ * Supports full and truncated forms, with unicode ellipsis and three dots.
+ */
+function buildMentionStrings(client: any): string[] {
+  const raw = (client.accountIdentifier?.identifier || "").toLowerCase();
+  if (!raw) return [];
+  const with0x = raw.startsWith("0x") ? raw : `0x${raw}`;
+  const shortEllipsis = `${with0x.slice(0, 6)}…${with0x.slice(-4)}`; // unicode ellipsis
+  const shortDots = `${with0x.slice(0, 6)}...${with0x.slice(-4)}`; // three dots
+  return [
+    `@${with0x}`,
+    `@${shortEllipsis}`,
+    `@${shortDots}`,
+  ];
+}
+
+function isMentioned(content: string, client: any): boolean {
+  const lc = (content || "").toLowerCase();
+  const mentions = buildMentionStrings(client);
+  return mentions.some((m) => lc.includes(m));
+}
 
 /**
  * Get the original message that is being replied to
@@ -178,6 +201,15 @@ async function main() {
       if (!conversation) {
         console.log("Unable to find conversation, skipping");
         return;
+      }
+      console.log("message", message);
+
+      // In group chats, only respond if our agent (by wallet address) is @mentioned
+      const isGroup = conversation instanceof Group;
+      const mentioned = isMentioned(messageContent, client);
+      if (isGroup && !mentioned) {
+        console.log("Group message without @ mention; ignoring.");
+        continue;
       }
 
       try {

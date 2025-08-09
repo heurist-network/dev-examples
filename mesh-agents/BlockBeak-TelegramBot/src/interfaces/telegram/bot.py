@@ -5,6 +5,7 @@ import asyncio
 import telebot
 import re
 from src.core.agent import create_agent_manager
+from src.core.orchestrator import create_triage_orchestrator
 from src.config.settings import Settings
 
 # Enable logging
@@ -26,7 +27,13 @@ class TelegramBotHandler:
         if not self.settings.is_telegram_configured():
             raise ValueError("Telegram bot token or chat ID not found. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env file.")
         
-        self.agent_manager = create_agent_manager()
+        # Use the triage orchestrator for multi-agent routing
+        try:
+            self.triage = create_triage_orchestrator()
+        except Exception as e:
+            logger.error(f"Falling back to single-agent manager due to orchestrator error: {e}")
+            self.triage = None
+            self.agent_manager = create_agent_manager()
         
         self.active_users = {}
         # Track conversation threads: message_id -> conversation_context
@@ -253,11 +260,17 @@ class TelegramBotHandler:
         else:
             question_with_context = question_text
         
-        agent_response_data = await self.agent_manager.process_message(
-            message=question_with_context,
-            streaming=False,
-            context_update=context_update
-        )
+        if self.triage:
+            agent_response_data = await self.triage.process_message(
+                message=question_with_context,
+                context_update=context_update,
+            )
+        else:
+            agent_response_data = await self.agent_manager.process_message(
+                message=question_with_context,
+                streaming=False,
+                context_update=context_update,
+            )
         return agent_response_data
 
     def process_message(self, message, is_reply=False):

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from src.core.agent import create_agent_manager, AgentError
+from src.core.orchestrator import create_triage_orchestrator
 from src.config.settings import Settings
 
 # Configure logging
@@ -45,7 +46,12 @@ def get_or_create_agent_manager(conversation_id: str):
     """Get or create an agent manager for a specific conversation."""
     if conversation_id not in conversation_agents:
         logger.info(f"Creating new agent manager for conversation: {conversation_id}")
-        conversation_agents[conversation_id] = create_agent_manager()
+        # Prefer triage orchestrator; fallback to single agent
+        try:
+            conversation_agents[conversation_id] = create_triage_orchestrator()
+        except Exception as e:
+            logger.error(f"Failed to init orchestrator, falling back to single agent: {e}")
+            conversation_agents[conversation_id] = create_agent_manager()
     return conversation_agents[conversation_id]
 
 @app.post("/inbox", response_model=AgentResponse)
@@ -71,14 +77,17 @@ async def process_xmtp_message(message: XMTPMessage):
         agent_manager = get_or_create_agent_manager(message.conversationId)
         
         # Prepare the message content with reply context if available
-        processed_message = message.message
+        # Inject a lightweight meta header so downstream agents can reliably pick sender
+        meta_header = f"[meta sender_inbox_id=@{message.sender} conversation_id={message.conversationId}]"
+        processed_message = f"{meta_header}\n{message.message}"
         if message.replyContext:
-            processed_message = f"[Replying to: \"{message.replyContext}\"]\n{message.message}"
+            processed_message = f"{meta_header}\n[Replying to: \"{message.replyContext}\"]\n{message.message}"
         
         # Prepare context update with sender and conversation info
         context_update = {
             "conversation_id": message.conversationId,
             "sender": message.sender,
+            "sender_inbox_id": message.sender,  # explicit alias for prompts/tools
         }
         
         # Add reply context to metadata if available
@@ -90,10 +99,10 @@ async def process_xmtp_message(message: XMTPMessage):
             context_update.update(message.meta)
         
         # Process the message through the agent
+        # Orchestrator and single-agent share the same minimal interface
         result = await agent_manager.process_message(
             message=processed_message,
-            streaming=False,
-            context_update=context_update
+            context_update=context_update,
         )
         
         logger.info(f"Agent response generated for conversation {message.conversationId}")
