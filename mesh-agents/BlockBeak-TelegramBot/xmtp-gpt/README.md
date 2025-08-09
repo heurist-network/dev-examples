@@ -61,7 +61,7 @@ source .venv/bin/activate
 
 # Set required environment variables
 export API_KEY=your_openai_api_key_here
-export MODEL=gpt-4o-mini
+export MODEL=gpt-5-mini
 export MCP_SSE_URL=your_mcp_sse_url_here
 
 # Start the Python agent API server
