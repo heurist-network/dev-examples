@@ -77,7 +77,7 @@ cd ..
 python main_xmtp.py
 
 # Option 2: Use uvicorn directly
-uvicorn src.interfaces.xmtp.api:app --host 127.0.0.1 --port 8000 --reload
+uvicorn src.interfaces.xmtp.api:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 The server will start on `http://127.0.0.1:8000` and you should see:

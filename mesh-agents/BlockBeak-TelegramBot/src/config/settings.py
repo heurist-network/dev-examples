@@ -97,6 +97,10 @@ class Settings:
         # XMTP settings
         self.xmtp_agent_endpoint = os.getenv("XMTP_AGENT_ENDPOINT", "http://127.0.0.1:8000")
 
+        # Bankr delegator settings
+        self.bankr_handle = os.getenv("BANKR_HANDLE", "@bankr.base.eth")
+        self.default_chain = os.getenv("DEFAULT_CHAIN", "base")
+
         self.agent_instructions = self._load_agent_instructions()
 
         logger.info(f"Configuration loaded successfully for provider: {self.provider}")
@@ -288,3 +292,28 @@ class Settings:
     def get_xmtp_config(self) -> Dict[str, Any]:
         """Get the XMTP configuration settings."""
         return {"agent_endpoint": self.xmtp_agent_endpoint}
+
+    # ---- Per-agent instruction helpers for orchestrator ----
+    def get_agent_instructions_by_name(self, name: str) -> str:
+        """Load instructions file by agent name (triage, blockbeak, bankr_delegator).
+
+        Falls back to the normal BlockBeak instructions when not found.
+        """
+        config_dir = Path(__file__).parent
+        mapping = {
+            "triage": config_dir / "triage_instructions.yaml",
+            "blockbeak": config_dir / "blockbeak_instructions.yaml",
+            "bankr_delegator": config_dir / "bankr_delegator_instructions.yaml",
+        }
+        yaml_path = mapping.get(name)
+        if yaml_path and yaml_path.exists():
+            with open(yaml_path, "r") as f:
+                yaml_content = yaml.safe_load(f)["instructions"]
+            # Inject date context
+            date_context = self._get_current_date_context()
+            try:
+                return yaml_content.format(**date_context, bankr_handle=self.bankr_handle, default_chain=self.default_chain)
+            except Exception:
+                return yaml_content
+        # Fallback to normal instructions
+        return self.get_agent_instructions("normal")
