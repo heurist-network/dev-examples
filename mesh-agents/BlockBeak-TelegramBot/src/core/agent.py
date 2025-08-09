@@ -292,20 +292,37 @@ class AgentManager:
         # Select instructions based on mode
         instructions = self.instructions_deep if mode == "deep" else self.instructions_normal
         
-        # Adjust model settings based on mode
+        # Adjust model settings based on mode and model type
+        # GPT-5 models don't support temperature but support reasoning
+        is_gpt5_model = "gpt-5" in self.model.lower()
+        
         if mode == "deep":
-            # Deep mode: higher temperature for more creative exploration
-            model_settings = ModelSettings(
-                temperature=min(self.temperature * 1.5, 0.7),  # Slightly higher temp for exploration
-                max_tokens=min(self.max_tokens, 15000),  # More tokens for comprehensive analysis
-            )
+            # Deep mode: for GPT-5 use reasoning, for others use higher temperature
+            if is_gpt5_model:
+                from agents.model_settings import Reasoning
+                model_settings = ModelSettings(
+                    max_tokens=min(self.max_tokens, 15000),  # More tokens for comprehensive analysis
+                    reasoning=Reasoning(effort="high")  # High reasoning effort for deep analysis
+                )
+            else:
+                model_settings = ModelSettings(
+                    temperature=min(self.temperature * 1.5, 0.7),  # Higher temp for exploration
+                    max_tokens=min(self.max_tokens, 15000),
+                )
             agent_name = "DeepAnalyst"
         else:
             # Normal mode: standard settings
-            model_settings = ModelSettings(
-                temperature=self.temperature,
-                max_tokens=min(self.max_tokens, 10000),
-            )
+            if is_gpt5_model:
+                from agents.model_settings import Reasoning
+                model_settings = ModelSettings(
+                    max_tokens=min(self.max_tokens, 10000),
+                    reasoning=Reasoning(effort="medium")  # Medium reasoning for normal mode
+                )
+            else:
+                model_settings = ModelSettings(
+                    temperature=self.temperature,
+                    max_tokens=min(self.max_tokens, 10000),
+                )
             agent_name = "Assistant"
 
         agent = OpenAIAgent(

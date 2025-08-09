@@ -102,7 +102,7 @@ Create a `.env` file in the project root with the following variables:
 # Required: Choose your LLM provider and configure accordingly
 MODEL_PROVIDER=openai  # Options: openai, anthropic, openrouter, xai, heurist
 API_KEY=your_api_key_here
-MODEL=gpt-4o-mini  # Model name for your chosen provider
+MODEL=gpt-5-mini  # Model name for your chosen provider
 
 # Required: MCP SSE URL for Heurist Mesh integration
 MCP_SSE_URL=https://your-mcp-sse-endpoint.com
@@ -114,6 +114,7 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=123456789,987654321
 
 # Optional: Agent behavior settings
+# Note: TEMPERATURE is ignored for GPT-5 models (they use reasoning parameters instead)
 TEMPERATURE=0.1
 MAX_TOKENS=500000
 ```
@@ -124,7 +125,7 @@ MAX_TOKENS=500000
 ```bash
 MODEL_PROVIDER=openai
 API_KEY=sk-...
-MODEL=gpt-4o-mini
+MODEL=gpt-5-mini
 ```
 
 #### Anthropic
@@ -152,7 +153,7 @@ MODEL=x-1
 ```bash
 MODEL_PROVIDER=heurist
 API_KEY=your-heurist-api-key
-MODEL=gpt-4o-mini
+MODEL=gpt-5-mini
 ```
 
 ## 🚀 Usage
@@ -289,7 +290,7 @@ Ask **"Why did PEPE pump today?"** and get comprehensive analysis combining pric
 |----------|----------|-------------|---------|
 | `MODEL_PROVIDER` | Yes | LLM provider to use | `openai`, `anthropic`, `openrouter`, `xai`, `heurist` |
 | `API_KEY` | Yes | API key for the chosen provider | `sk-...` |
-| `MODEL` | Yes | Model name for the provider | `gpt-4o-mini`, `claude-3-5-sonnet` |
+| `MODEL` | Yes | Model name for the provider | `gpt-5-mini`, `claude-3-5-sonnet` |
 | `MCP_SSE_URL` | Yes | MCP SSE endpoint for Heurist Mesh | `https://mcp.heurist.ai/...` |
 | `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token from @BotFather | `1234567890:ABC...` |
 | `TELEGRAM_CHAT_ID` | No | Comma-separated list of allowed chat IDs | `123456789,987654321` |

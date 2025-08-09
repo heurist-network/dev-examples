@@ -44,7 +44,7 @@ The XMTP integration consists of two components:
    # Core AI Configuration
    MODEL_PROVIDER=openai
    API_KEY=your_openai_api_key_here
-   MODEL=gpt-4o-mini
+   MODEL=gpt-5-mini
    TEMPERATURE=0.1
    MAX_TOKENS=500000
    MCP_SSE_URL=your_mcp_sse_url_here

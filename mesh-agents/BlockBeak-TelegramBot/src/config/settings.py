@@ -76,7 +76,9 @@ class Settings:
             )
 
         # Agent settings
-        self.base_model = os.getenv("MODEL", "gpt-4.1-mini")
+        # Default to OpenAI's latest lightweight model
+        self.base_model = os.getenv("MODEL", "gpt-5-mini")
+        # Note: GPT-5 models don't support temperature parameter - handled automatically in agent.py
         self.temperature = float(os.getenv("TEMPERATURE", "0.1"))
         self.max_tokens = int(os.getenv("MAX_TOKENS", "500000"))
         self.api_key = os.getenv("API_KEY")
