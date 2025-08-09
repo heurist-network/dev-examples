@@ -53,3 +53,8 @@ Thumbs.db
 *.bak6
 # SpecStory explanation file
 .specstory/.what-is-this.md
+
+# Ignore XMTP local SQLite artifacts
+xmtp-gpt/*.db3
+xmtp-gpt/*.db3-*
+xmtp-gpt/*.db3.sqlcipher_salt
