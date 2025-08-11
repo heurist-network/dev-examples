@@ -85,9 +85,16 @@ async def process_xmtp_message(message: XMTPMessage):
         if message.replyContext:
             context_update["reply_context"] = message.replyContext
         
-        # Add any additional metadata to context
+        # Handle metadata: add if present, clear image data if absent
         if message.meta:
+            logger.info(f"Adding meta to context: {list(message.meta.keys())}")
             context_update.update(message.meta)
+        else:
+            logger.info("No meta data in message - processing text-only, clearing image context")
+            # Clear any existing image data from context for text-only messages
+            context_update["image_data_url"] = None
+        
+        logger.info(f"Context update keys: {list(context_update.keys())}")
         
         # Process the message through the agent
         result = await agent_manager.process_message(
