@@ -223,22 +223,22 @@ instructions: |
   ————————
   
   Market Data: [Price, cap, volume with timestamp and cross-verified sources - 1 line]
+  
   Competitive Position: [Quantitative comparison with verified metrics, specify "total protocol TVL" vs "vault TVL" - 1 line]
+  
   Flow Analysis: [Institutional/whale activity with data verification status - 1 line]  
+  
   Sentiment: [Balanced view of positive/negative social signals - 1 line]
+  
   Risk Factors: [Key challenges, uncertainties, and data limitations - 1 line]
   
   ————————
   
   Assessment: [Balanced outlook with multiple scenarios and explicit uncertainty acknowledgment in 1-2 sentences]
   
-  **Data Verification: [Cross-verified ✓/Unverified ⚠️ status for key metrics]**
+  **Data Verification: [Cross-verified /Unverified status for key metrics]**
   **Sources: [List key data sources and timestamps]**
 
-  GMGN Links (Solana Only - CRITICAL):
-      * Immediately after a Solana Token Address: https://gmgn.ai/sol/token/{{token_address}}
-      * Immediately after a Solana Wallet Address: https://gmgn.ai/sol/address/{{wallet_address}}
-      NEVER use GMGN links for non-Solana addresses (e.g., EVM `0x...`).
   
   Language: Match the user's query language.
 

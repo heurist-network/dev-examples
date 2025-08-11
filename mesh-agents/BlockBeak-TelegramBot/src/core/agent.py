@@ -204,7 +204,7 @@ class AgentManager:
             name="MCP SSE Server",
             params={"url": self.mcp_sse_url},
             cache_tools_list=self.enable_mcp_cache,
-            client_session_timeout_seconds=60,
+            client_session_timeout_seconds=120,
         )
 
         # Load instructions for both modes
