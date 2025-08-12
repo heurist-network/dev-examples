@@ -3,6 +3,7 @@
 import asyncio
 import random
 import logging
+import re
 from typing import AsyncGenerator, Dict, Optional, Union, Callable, Any, Literal
 from openai import OpenAI, OpenAIError
 from agents import Agent as OpenAIAgent, Runner, gen_trace_id, trace, ModelSettings
@@ -15,6 +16,33 @@ logger = logging.getLogger(__name__)
 # Agent modes
 AgentMode = Literal["normal", "deep"]
 
+
+def _strip_context_for_mode_detection(message: str) -> str:
+    """Extract the user's current question and strip prefixed context blocks
+    that are added for LLM comprehension but should not influence mode detection.
+
+    Rules applied in order:
+    - Remove a leading "[Replying to: \"...\"]" block (XMTP reply context)
+    - If the text contains "Current question:", use the substring after the
+      last occurrence of that label (Telegram conversation wrapper)
+    - Trim whitespace
+    """
+    if not message:
+        return message
+
+    cleaned = message
+
+    # 1) Remove leading XMTP reply prefix like: [Replying to: "..."]\n
+    cleaned = re.sub(r'^\[Replying to:\s*"[\s\S]*?"\]\s*\n?', '', cleaned)
+
+    # 2) Extract only the current question if the wrapper exists
+    label = "Current question:"
+    if label in cleaned:
+        # Use the last occurrence to be robust if the phrase appears elsewhere
+        cleaned = cleaned.rsplit(label, 1)[-1]
+
+    return cleaned.strip()
+
 def detect_mode(message: str) -> AgentMode:
     """
     Detect which agent mode to use based on message content.
@@ -23,6 +51,8 @@ def detect_mode(message: str) -> AgentMode:
     Returns "deep" if message contains keywords indicating need for deep analysis,
     otherwise returns "normal" for standard responses.
     """
+    # Sanitize message to avoid context wrappers influencing mode detection
+    message = _strip_context_for_mode_detection(message)
     # Multi-language deep mode keywords
     deep_keywords = {
         # English
