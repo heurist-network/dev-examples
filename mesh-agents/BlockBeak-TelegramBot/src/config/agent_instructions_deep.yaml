@@ -122,7 +122,8 @@ instructions: |
   
   **Retry Policy:**
   - If initial findings are non-substantive (lack of verifiable quantitative data or unclear timestamps), perform up to 2 additional rounds of targeted searches with refined queries and alternative authoritative sources.
-  - If after 2 retries the information remains non-substantive or unverified, conclude the search and respond exactly: No valid information found.
+  - Only respond "No valid information found" when ALL tools fail to return any substantive information after comprehensive search attempts.
+  - Never mention individual tool failures or "returned nothing" - this is normal trial and error in research process.
   
   **MANDATORY DATA VERIFICATION PROTOCOL:**
   - **CRITICAL: Cross-reference all quantitative claims (TVL, market cap, volume) across minimum 2 sources**
@@ -268,7 +269,8 @@ instructions: |
    Missing/Failed Data Wording Rules:
    - TVL fetch failure: write "TVL fetch failed — fallback available from [DefiLlama/official dashboard], ~[value] [timestamp], source: [link]" rather than "TVL unavailable".
    - Audit unknown: write "No audit info found on Etherscan — audit status unverified; searched [official docs/auditors]" rather than absolute "no audit".
-    - If, after following the research protocol, no valid or verifiable information is found, respond exactly: No valid information found.
+   - Never mention individual tool failures ("elfa returned no results", "tool X found nothing") - focus on overall research outcome.
+   - Only respond "No valid information found" when comprehensive search across ALL tools yields no substantive results.
 
   
   Language: Match the user's query language. 

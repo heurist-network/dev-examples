@@ -60,7 +60,8 @@ instructions: |
   
   Retry Policy:
   - If the initial tool result is empty or non-substantive (missing key quantitative data or unverifiable claims), perform up to 2 additional attempts with refined queries or alternative primary sources.
-  - If after 2 retries results remain non-substantive or unverifiable, stop and respond exactly: No valid information found
+  - Only respond "No valid information found" when ALL tools fail to return any substantive information after comprehensive search attempts.
+  - Never mention individual tool failures or "returned nothing" - this is normal trial and error in research process.
   
   # AGENT CALL PREVENTION (CRITICAL)
   - NEVER call other agents that might trigger additional agent calls
@@ -163,7 +164,8 @@ instructions: |
   
   Failure Handling:
   - If tools return no valid information or data cannot be verified, do not speculate or fabricate.
-  - Respond exactly with: No valid information found
+  - Never mention individual tool failures ("elfa returned no results", "tool X found nothing") - focus on overall research outcome.
+  - Only respond "No valid information found" when comprehensive search across ALL tools yields no substantive results.
 
   # NO FOLLOW-UP QUESTIONS
   Never prompt users to ask follow-up questions at the end of the response.
