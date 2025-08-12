@@ -157,9 +157,14 @@ The Node.js client communicates with the Python backend using this HTTP API:
 ```json
 {
   "conversationId": "xmtp-conversation-id",
-  "sender": "sender-wallet-address", 
+  "sender": "0x...", 
   "message": "user message content",
-  "meta": {} // optional metadata
+  "replyContext": "optional original message text if this was a reply",
+  "meta": {
+    "senderInboxId": "the XMTP inboxId of the sender",
+    "senderEvmAddresses": ["0xabc...", "0xdef..."],
+    "senderPrimaryEvmAddress": "0xabc..."
+  }
 }
 ```
 
@@ -170,6 +175,18 @@ The Node.js client communicates with the Python backend using this HTTP API:
   "trace_url": "https://platform.openai.com/traces/trace?trace_id=..."
 }
 ```
+
+The client prefers the sender's EVM address as the `sender` field. It resolves EVM wallet identifiers for the sender using the XMTP preferences API and falls back to `inboxId` if none are available. The original `inboxId` is always sent in `meta.senderInboxId`:
+
+```ts
+// message.senderInboxId is the other party's inboxId
+const state = await client.preferences.inboxStateFromInboxIds([message.senderInboxId]);
+const ids = state[0]?.identifiers ?? [];
+const evmAddresses = ids
+  .filter(i => i.identifier?.toLowerCase().startsWith('0x'))
+  .map(i => i.identifier as `0x${string}`);
+```
+These addresses are forwarded in the `meta` payload so backends can use a canonical EVM address if needed while keeping `sender` as the inboxId.
 
 ## Error Handling
 

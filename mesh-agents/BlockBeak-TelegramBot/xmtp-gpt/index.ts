@@ -78,7 +78,14 @@ async function getReferencedMessage(conversation: any, messageId: string): Promi
 /**
  * Call the Python agent API with exponential backoff retry
  */
-async function callAgentAPI(conversationId: string, sender: string, message: string, replyContext?: string, retries = 2): Promise<string> {
+async function callAgentAPI(
+  conversationId: string,
+  sender: string,
+  message: string,
+  replyContext?: string,
+  meta?: Record<string, unknown>,
+  retries = 2,
+): Promise<string> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       console.log(`Calling agent API (attempt ${attempt}/${retries})...`);
@@ -93,6 +100,7 @@ async function callAgentAPI(conversationId: string, sender: string, message: str
           sender,
           message,
           replyContext: replyContext || null,
+          meta: meta ?? null,
         }),
         // 180 second timeout
         signal: AbortSignal.timeout(180000),
@@ -169,11 +177,7 @@ async function main() {
       if (message.contentType?.sameAs(ContentTypeReply)) {
         const reply = message.content as Reply;
         messageContent = reply.content as string;
-        
-        console.log(
-          `Received reply: "${messageContent}" by ${message.senderInboxId} (replying to message ID: ${reply.reference})`,
-        );
-        
+        // For replies, we'll log after resolving sender identity below
         // Get the original message being replied to
         const conversation = await client.conversations.getConversationById(
           message.conversationId,
@@ -187,9 +191,7 @@ async function main() {
       } else {
         // Regular text message
         messageContent = message.content as string;
-        console.log(
-          `Received message: ${messageContent} by ${message.senderInboxId}`,
-        );
+        // We'll log after resolving sender identity below
       }
 
       /* Get the conversation from the local db */
@@ -213,6 +215,39 @@ async function main() {
       }
 
       try {
+        // Resolve EVM addresses for the sender inboxId
+        const state = await client.preferences.inboxStateFromInboxIds([
+          message.senderInboxId,
+        ]);
+        const identifiers = (state?.[0]?.identifiers ?? []) as Array<{
+          identifier?: string;
+        }>;
+        const evmAddresses = identifiers
+          .filter((i) => (i.identifier ?? "").toLowerCase().startsWith("0x"))
+          .map((i) => i.identifier!.toLowerCase() as `0x${string}`);
+
+        if (evmAddresses.length) {
+          console.log(
+            `Resolved EVM address(es) for ${message.senderInboxId}: ${evmAddresses.join(", ")}`,
+          );
+        } else {
+          console.log(
+            `No EVM addresses resolved for ${message.senderInboxId}; proceeding with inboxId only`,
+          );
+        }
+        const senderDisplay = (evmAddresses[0] ?? message.senderInboxId) as string;
+
+        // Now that we have identity, log the received message line with EVM address preferred
+        if (message.contentType?.sameAs(ContentTypeReply)) {
+          const reply = message.content as Reply;
+          console.log(
+            `Received reply: "${messageContent}" by ${senderDisplay} (inbox: ${message.senderInboxId}) (replying to message ID: ${reply.reference})`,
+          );
+        } else {
+          console.log(
+            `Received message: ${messageContent} by ${senderDisplay} (inbox: ${message.senderInboxId})`,
+          );
+        }
         /* Send a 👀 reaction to indicate message received and processing */
         console.log("Sending 👀 reaction to indicate message received...");
         
@@ -230,9 +265,15 @@ async function main() {
         /* Call the Python agent API to get the response */
         const response = await callAgentAPI(
           message.conversationId,
-          message.senderInboxId,
+          // Prefer EVM address for sender; fallback to inboxId
+          senderDisplay,
           messageContent,
-          replyContext || undefined
+          replyContext || undefined,
+          {
+            senderInboxId: message.senderInboxId,
+            senderEvmAddresses: evmAddresses,
+            senderPrimaryEvmAddress: evmAddresses[0] ?? null,
+          },
         );
 
         console.log(`Sending agent response: ${response.substring(0, 100)}...`);
