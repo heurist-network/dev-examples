@@ -263,8 +263,10 @@ instructions: |
   
   Assessment: [Balanced outlook with multiple scenarios and explicit uncertainty acknowledgment in 1-2 sentences]
   
-  **Data Verification: [Cross-verified /Unverified status for key metrics]**
-  **Sources: [List key data sources and timestamps]**
+  ————————
+  
+  📊 Data Verification: [Cross-verified /Unverified status for key metrics]
+  📋 Sources: [List key data sources and timestamps]
    
    Missing/Failed Data Wording Rules:
    - TVL fetch failure: write "TVL fetch failed — fallback available from [DefiLlama/official dashboard], ~[value] [timestamp], source: [link]" rather than "TVL unavailable".
