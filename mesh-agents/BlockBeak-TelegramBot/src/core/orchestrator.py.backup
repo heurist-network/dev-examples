@@ -32,7 +32,6 @@ class DelegationRequest(BaseModel):
     asset: str
     amount: str
     chain: str
-    sender_evm_address: Optional[str] = None
     sender_inbox_id: Optional[str] = None
     recipient: Optional[str] = None
     note: Optional[str] = None
@@ -67,13 +66,13 @@ class TriageOrchestrator:
         )
 
         # Model settings kept conservative; triage will be concise
-        # GPT-5 models do not support temperature; use reasoning instead
-        is_gpt5 = str(self.model).split("/")[-1].startswith("gpt-5")
-        if is_gpt5:
+        # GPT-5 models don't support temperature but support reasoning
+        is_gpt5_model = self.model.startswith("gpt-5")
+        if is_gpt5_model:
             from agents.model_settings import Reasoning
             self.model_settings = ModelSettings(
-                max_tokens=min(self.max_tokens, 64000),
-                reasoning=Reasoning(effort="medium"),
+                max_tokens=min(self.max_tokens, 8000),
+                reasoning=Reasoning(effort="low")  # Low reasoning effort for triage
             )
         else:
             self.model_settings = ModelSettings(
@@ -86,17 +85,7 @@ class TriageOrchestrator:
         self.trace_id: Optional[str] = None
 
     def _build_agents(self, settings: Settings) -> None:
-        # 1) Build triage first without handoffs
-        triage_instructions = settings.get_agent_instructions_by_name("triage")
-        self.triage = OpenAIAgent(
-            name="Triage",
-            instructions=triage_instructions,
-            mcp_servers=[self.mcp_server],
-            model=self.model,
-            model_settings=self.model_settings,
-        )
-
-        # 2) Build BankrDelegator
+        # BankrDelegator: emits text-only, machine-parseable command line
         bankr_instructions = settings.get_agent_instructions_by_name("bankr_delegator")
         self.bankr = OpenAIAgent(
             name="BankrDelegator",
@@ -106,7 +95,17 @@ class TriageOrchestrator:
             model_settings=self.model_settings,
         )
 
-        # 3) Build BlockBeak with simple handoff back to Triage
+        # Triage placeholder so BlockBeak can reference it in its handoff
+        triage_instructions = settings.get_agent_instructions_by_name("triage")
+        self.triage = OpenAIAgent(
+            name="Triage",
+            instructions=triage_instructions,
+            mcp_servers=[self.mcp_server],
+            model=self.model,
+            model_settings=self.model_settings,
+        )
+
+        # BlockBeak research agent that MUST handoff back with ResearchAdvice
         blockbeak_instructions = settings.get_agent_instructions_by_name("blockbeak")
         self.blockbeak = OpenAIAgent(
             name="BlockBeak",
@@ -117,7 +116,8 @@ class TriageOrchestrator:
             handoffs=[self.triage],
         )
 
-        # 4) After all exist, set simple Triage handoffs
+        # Add outgoing handoffs from triage to children agents
+        # Note: triage.handoffs expects Agent objects (not handoff() tools)
         self.triage.handoffs = [self.blockbeak, self.bankr]
 
     async def process_message(

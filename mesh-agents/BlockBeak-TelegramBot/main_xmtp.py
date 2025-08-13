@@ -27,7 +27,7 @@ def main():
     
     # Get configuration from environment variables
     host = os.getenv("XMTP_API_HOST", "127.0.0.1")
-    port = int(os.getenv("XMTP_API_PORT", "8000"))
+    port = int(os.getenv("XMTP_API_PORT", "8001"))
     reload = os.getenv("XMTP_API_RELOAD", "false").lower() == "true"
     
     print(f"Starting XMTP API server on {host}:{port}")

@@ -66,7 +66,26 @@ async def process_xmtp_message(message: XMTPMessage):
         AgentResponse containing the AI response and trace URL
     """
     try:
-        logger.info(f"Processing message from {message.sender} in conversation {message.conversationId}")
+        raw_sender = (message.sender or "").strip()
+        meta = message.meta or {}
+
+        # Prefer EVM address for sender; fall back to inboxId
+        is_sender_evm = raw_sender.lower().startswith("0x")
+        sender_primary_evm = (
+            raw_sender if is_sender_evm else meta.get("senderPrimaryEvmAddress")
+        )
+        sender_inbox_id = meta.get("senderInboxId") or (
+            raw_sender if not is_sender_evm else None
+        )
+        sender_evm_addresses = meta.get("senderEvmAddresses") or (
+            [sender_primary_evm] if sender_primary_evm else []
+        )
+
+        display_sender = sender_primary_evm or sender_inbox_id or raw_sender
+
+        logger.info(
+            f"Processing message from {display_sender} in conversation {message.conversationId}"
+        )
         logger.debug(f"Message content: {message.message}")
         
         # Check if this is a reply to another message
@@ -78,7 +97,11 @@ async def process_xmtp_message(message: XMTPMessage):
         
         # Prepare the message content with reply context if available
         # Inject a lightweight meta header so downstream agents can reliably pick sender
-        meta_header = f"[meta sender_inbox_id=@{message.sender} conversation_id={message.conversationId}]"
+        meta_header = (
+            f"[meta sender=@{sender_primary_evm or raw_sender} "
+            f"sender_inbox_id=@{sender_inbox_id or raw_sender} "
+            f"conversation_id={message.conversationId}]"
+        )
         processed_message = f"{meta_header}\n{message.message}"
         if message.replyContext:
             processed_message = f"{meta_header}\n[Replying to: \"{message.replyContext}\"]\n{message.message}"
@@ -86,8 +109,11 @@ async def process_xmtp_message(message: XMTPMessage):
         # Prepare context update with sender and conversation info
         context_update = {
             "conversation_id": message.conversationId,
-            "sender": message.sender,
-            "sender_inbox_id": message.sender,  # explicit alias for prompts/tools
+            # Prefer EVM address for sender in downstream prompts/tools
+            "sender": display_sender,
+            "sender_evm_address": sender_primary_evm,
+            "sender_evm_addresses": sender_evm_addresses,
+            "sender_inbox_id": sender_inbox_id or raw_sender,
         }
         
         # Add reply context to metadata if available
