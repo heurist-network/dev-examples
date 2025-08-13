@@ -332,9 +332,9 @@ class AgentManager:
                 from agents.model_settings import Reasoning
                 model_settings = ModelSettings(
                     max_tokens=min(self.max_tokens, 200000),  # More tokens for comprehensive analysis
-                    reasoning=Reasoning(effort="high")  # High reasoning effort for deep analysis
+                    reasoning=Reasoning(effort="low")  # High reasoning effort for deep analysis
                 )
-            else:
+            else:   
                 model_settings = ModelSettings(
                     temperature=min(self.temperature * 1.5, 0.7),  # Higher temp for exploration
                     max_tokens=min(self.max_tokens, 15000),
@@ -346,7 +346,7 @@ class AgentManager:
                 from agents.model_settings import Reasoning
                 model_settings = ModelSettings(
                     max_tokens=min(self.max_tokens, 10000),
-                    reasoning=Reasoning(effort="medium")  # Medium reasoning for normal mode
+                    reasoning=Reasoning(effort="low")  # Medium reasoning for normal mode
                 )
             else:
                 model_settings = ModelSettings(
