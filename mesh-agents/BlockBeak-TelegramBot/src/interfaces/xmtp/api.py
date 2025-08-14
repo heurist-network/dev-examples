@@ -85,9 +85,16 @@ async def process_xmtp_message(message: XMTPMessage):
         if message.replyContext:
             context_update["reply_context"] = message.replyContext
         
-        # Add any additional metadata to context
+        # Handle image meta data - merge into context if present, clear if absent
         if message.meta:
+            logger.info(f"Context update keys: {list(message.meta.keys())}")
             context_update.update(message.meta)
+            # Log if image data is present (without logging the actual data URL for brevity)
+            if "image_data_url" in message.meta:
+                logger.info(f"Image data received - filename: {message.meta.get('filename', 'unknown')}, mime_type: {message.meta.get('mime_type', 'unknown')}")
+        else:
+            # Clear any previous image data to ensure text-only turns don't retain old images
+            context_update["image_data_url"] = None
         
         # Process the message through the agent
         result = await agent_manager.process_message(

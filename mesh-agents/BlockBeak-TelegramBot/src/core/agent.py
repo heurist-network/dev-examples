@@ -366,10 +366,35 @@ class AgentManager:
         async with self.mcp_server:
             with trace(workflow_name="BlockBeak MCP Agent", trace_id=self.trace_id):
                 try:
+                    # Build multimodal input if an image data URL is present in context
+                    input_payload: Any
+                    image_url = None
+                    logger.debug(f"Processing message: {message}")
+                    if isinstance(self.context, dict):
+                        image_url = self.context.get("image_data_url")
+                        logger.debug(f"Image URL from context: {bool(image_url)}")
+
+                    if image_url:
+                        # The Agents Runner expects a top-level 'message' item; content can include text + image
+                        input_payload = [
+                            {
+                                "type": "message",
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": message},
+                                    {"type": "input_image", "image_url": image_url},
+                                ],
+                            }
+                        ]
+                        logger.info("Constructed multimodal input with text and image")
+                    else:
+                        input_payload = message
+                        logger.debug("Using text-only input")
+
                     result = await self._execute_with_retry(
                         Runner.run,
                         starting_agent=agent,
-                        input=message,
+                        input=input_payload,
                         context=self.context,
                     )
 
