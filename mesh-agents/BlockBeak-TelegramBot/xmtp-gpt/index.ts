@@ -37,6 +37,10 @@ const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
 /* Default agent endpoint if not provided */
 const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8000/inbox";
 
+/* Check DEBUG_MODE environment variable */
+const DEBUG_MODE = process.env.DEBUG_MODE?.toLowerCase() === 'true';
+console.log(`DEBUG_MODE is ${DEBUG_MODE ? 'enabled' : 'disabled'}`);
+
 type ImageMeta = {
   image_data_url: string;
   filename?: string;
@@ -158,13 +162,26 @@ async function flushPending(
       if (!res.ok) {
         throw new Error(`Agent API error: ${res.status} ${res.statusText}`);
       }
-      const result = (await res.json()) as { response?: string };
+      const result = (await res.json()) as { response?: string; trace_url?: string };
       const responseText = String(result.response || "");
+      
+      // Log trace URL if available
+      if (result.trace_url) {
+        console.log(`Trace URL: ${result.trace_url}`);
+      }
+      
       console.log(
         `Agent API response received: ${responseText.substring(0, 100)}...`,
       );
+      
+      // Format response based on DEBUG_MODE
+      let formattedResponse = responseText;
+      if (DEBUG_MODE && result.trace_url) {
+        formattedResponse = `${responseText}\n\n🔍 View trace: ${result.trace_url}`;
+      }
+      
       console.log(`Attempting to send response to XMTP conversation...`);
-      await conversation.send(responseText);
+      await conversation.send(formattedResponse);
       console.log(`✓ Response sent successfully to XMTP conversation`);
       // Mark as processed with current timestamp
       lastProcessedByConversation.set(conversationId, Date.now());

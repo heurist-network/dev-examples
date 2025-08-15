@@ -32,7 +32,7 @@ class XMTPMessage(BaseModel):
 
 class AgentResponse(BaseModel):
     response: str
-    trace_url: str
+    trace_url: Optional[str] = None
 
 class HealthResponse(BaseModel):
     status: str
@@ -40,6 +40,10 @@ class HealthResponse(BaseModel):
 
 # Global agent manager cache per conversation
 conversation_agents: Dict[str, Any] = {}
+
+# Get DEBUG_MODE from settings
+settings = Settings()
+DEBUG_MODE = settings.debug_mode
 
 def get_or_create_agent_manager(conversation_id: str):
     """Get or create an agent manager for a specific conversation."""
@@ -106,10 +110,15 @@ async def process_xmtp_message(message: XMTPMessage):
         logger.info(f"Agent response generated for conversation {message.conversationId}")
         logger.debug(f"Response: {result['output'][:100]}...")  # Log first 100 chars
         
-        return AgentResponse(
-            response=result["output"],
-            trace_url=result["trace_url"]
-        )
+        # Build response based on debug mode
+        response_data = AgentResponse(response=result["output"])
+        
+        # Only include trace_url if debug_mode is enabled and trace_url exists
+        if DEBUG_MODE and "trace_url" in result:
+            response_data.trace_url = result["trace_url"]
+            logger.debug(f"Trace URL included in response: {result['trace_url']}")
+        
+        return response_data
         
     except AgentError as e:
         logger.error(f"Agent error processing message: {str(e)}")

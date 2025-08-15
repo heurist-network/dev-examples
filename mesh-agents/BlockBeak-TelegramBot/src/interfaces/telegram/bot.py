@@ -27,6 +27,7 @@ class TelegramBotHandler:
             raise ValueError("Telegram bot token or chat ID not found. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env file.")
         
         self.agent_manager = create_agent_manager()
+        self.debug_mode = self.settings.debug_mode
         
         self.active_users = {}
         # Track conversation threads: message_id -> conversation_context
@@ -294,9 +295,10 @@ class TelegramBotHandler:
             )
             
             actual_output = agent_response_data["output"]
-            trace_url = agent_response_data["trace_url"]
+            trace_url = agent_response_data.get("trace_url")  # May be None if debug_mode is False
 
-            logger.debug(f"Trace URL: {trace_url}")
+            if trace_url:
+                logger.debug(f"Trace URL: {trace_url}")
             
             # Add assistant response to history
             user_session["history"].append({"role": "assistant", "content": actual_output})
@@ -311,7 +313,15 @@ class TelegramBotHandler:
                 logger.warning(f"Failed to delete waiting message: {e}")
 
             logger.debug(f"Response preview: {actual_output[:100]}...")
-            bot_reply = self.bot.reply_to(message, actual_output)
+            
+            # Format response based on debug mode
+            if self.debug_mode and trace_url:
+                # Include trace URL in the message
+                response_with_trace = f"{actual_output}\n\n🔍 [View trace]({trace_url})"
+                bot_reply = self.bot.reply_to(message, response_with_trace, parse_mode='Markdown')
+            else:
+                # Send only the output without trace URL
+                bot_reply = self.bot.reply_to(message, actual_output)
             
             # Store the conversation thread
             self.conversation_threads[bot_reply.message_id] = {

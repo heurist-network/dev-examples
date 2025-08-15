@@ -83,6 +83,10 @@ class Settings:
         self.max_tokens = int(os.getenv("MAX_TOKENS", "500000"))
         self.api_key = os.getenv("API_KEY")
         self.mcp_sse_url = os.getenv("MCP_SSE_URL")
+        
+        # Debug settings
+        self.debug_mode = os.getenv("DEBUG_MODE", "false").lower() in ["true", "1", "yes"]
+        logger.info(f"DEBUG_MODE is {'enabled' if self.debug_mode else 'disabled'}")
 
         # Set OPENAI_API_KEY for OpenAI agents library compatibility
         if self.api_key and self.provider == "openai":
@@ -232,6 +236,7 @@ class Settings:
             "mcp_sse_url": self.mcp_sse_url,
             "provider": self.provider,
             "api_key": self.api_key,
+            "debug_mode": self.debug_mode,
         }
 
         if self.provider == "openai":

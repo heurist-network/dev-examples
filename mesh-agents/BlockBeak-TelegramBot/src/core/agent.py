@@ -219,6 +219,7 @@ class AgentManager:
         provider: str = "openai",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        debug_mode: bool = False,
     ):
         self.model = model
         self.temperature = temperature
@@ -229,6 +230,7 @@ class AgentManager:
         self.provider = provider
         self.api_key = api_key
         self.base_url = base_url
+        self.debug_mode = debug_mode
 
         self.mcp_server = MCPServerSse(
             name="MCP SSE Server",
@@ -332,7 +334,7 @@ class AgentManager:
                 from agents.model_settings import Reasoning
                 model_settings = ModelSettings(
                     max_tokens=min(self.max_tokens, 200000),  # More tokens for comprehensive analysis
-                    reasoning=Reasoning(effort="low")  # High reasoning effort for deep analysis
+                    reasoning=Reasoning(effort="medium")  # High reasoning effort for deep analysis
                 )
             else:   
                 model_settings = ModelSettings(
@@ -407,17 +409,21 @@ class AgentManager:
                     if streaming:
 
                         async def stream_response():
-                            yield f"[{mode.upper()} MODE] View trace: {trace_url}\n\n"
+                            if self.debug_mode:
+                                yield f"[{mode.upper()} MODE] View trace: {trace_url}\n\n"
                             for chunk in result.final_output.split():
                                 yield chunk + " "
 
                         return stream_response()
                     else:
-                        return {
-                            "output": result.final_output, 
-                            "trace_url": trace_url,
+                        response_data = {
+                            "output": result.final_output,
                             "mode": mode
                         }
+                        # Only include trace_url if debug_mode is enabled
+                        if self.debug_mode:
+                            response_data["trace_url"] = trace_url
+                        return response_data
                 except Exception as e:
                     logger.error(f"Error processing message: {str(e)}")
                     raise AgentError(f"Failed to process message: {str(e)}")
