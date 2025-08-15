@@ -316,9 +316,14 @@ class TelegramBotHandler:
             
             # Format response based on debug mode
             if self.debug_mode and trace_url:
-                # Include trace URL in the message
-                response_with_trace = f"{actual_output}\n\n🔍 [View trace]({trace_url})"
-                bot_reply = self.bot.reply_to(message, response_with_trace, parse_mode='Markdown')
+                # Send message without parse_mode to avoid entity parsing errors
+                # Append trace URL as plain text
+                response_with_trace = f"{actual_output}\n\n🔍 View trace: {trace_url}"
+                bot_reply = self.bot.reply_to(
+                    message,
+                    response_with_trace,
+                    disable_web_page_preview=True
+                )
             else:
                 # Send only the output without trace URL
                 bot_reply = self.bot.reply_to(message, actual_output)
