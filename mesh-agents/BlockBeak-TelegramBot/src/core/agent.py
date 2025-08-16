@@ -302,6 +302,7 @@ class AgentManager:
         streaming: bool = False,
         context_update: Optional[Dict[str, Any]] = None,
         force_mode: Optional[AgentMode] = None,
+        chat_id: Optional[int] = None,
     ) -> Union[Dict[str, str], AsyncGenerator[str, None]]:
         """Process a user message and return the agent's response
         
@@ -310,6 +311,7 @@ class AgentManager:
             streaming: Whether to stream the response
             context_update: Additional context to update
             force_mode: Force a specific mode ('normal' or 'deep'), otherwise auto-detect
+            chat_id: Optional Telegram chat ID for per-chat debug decisions
         """
         if context_update:
             self.context.update(context_update)
@@ -406,10 +408,17 @@ class AgentManager:
 
                     trace_url = self.get_trace_url()
 
+                    # Determine if trace URL should be included for this chat
+                    settings = Settings()
+                    should_include_trace = (
+                        chat_id is not None and 
+                        settings.is_debug_enabled_for_chat(chat_id)
+                    ) or self.debug_mode
+
                     if streaming:
 
                         async def stream_response():
-                            if self.debug_mode:
+                            if should_include_trace:
                                 yield f"[{mode.upper()} MODE] View trace: {trace_url}\n\n"
                             for chunk in result.final_output.split():
                                 yield chunk + " "
@@ -420,8 +429,8 @@ class AgentManager:
                             "output": result.final_output,
                             "mode": mode
                         }
-                        # Only include trace_url if debug_mode is enabled
-                        if self.debug_mode:
+                        # Include trace_url if debug is enabled for this chat
+                        if should_include_trace:
                             response_data["trace_url"] = trace_url
                         return response_data
                 except Exception as e:

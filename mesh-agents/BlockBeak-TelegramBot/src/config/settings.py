@@ -99,6 +99,11 @@ class Settings:
         chat_id_str = os.environ.get("TELEGRAM_CHAT_ID", "")
         logger.info(f"Raw TELEGRAM_CHAT_ID from os.environ: '{chat_id_str}'")
         self.telegram_chat_id = self._parse_chat_id(chat_id_str)
+        
+        # Parse debug chat IDs for trace URL visibility
+        debug_chat_id_str = os.environ.get("TELEGRAM_DEBUG_CHAT_ID", "")
+        logger.info(f"Raw TELEGRAM_DEBUG_CHAT_ID from os.environ: '{debug_chat_id_str}'")
+        self.telegram_debug_chat_id = self._parse_chat_id(debug_chat_id_str) if debug_chat_id_str else []
 
         # XMTP settings
         self.xmtp_agent_endpoint = os.getenv("XMTP_AGENT_ENDPOINT", "http://127.0.0.1:8000")
@@ -135,6 +140,9 @@ class Settings:
             chat_ids = []
             for id_str in chat_id_str.split(","):
                 id_str = id_str.strip()
+                # Skip empty strings (handles trailing commas gracefully)
+                if not id_str:
+                    continue
                 chat_id = int(id_str)
                 logger.info(f"Parsed chat ID: {chat_id} (type: {type(chat_id)})")
                 chat_ids.append(chat_id)
@@ -272,12 +280,28 @@ class Settings:
 
     def get_telegram_config(self) -> Dict[str, Any]:
         """Get the Telegram bot configuration settings."""
-        return {"token": self.telegram_token, "chat_id": self.telegram_chat_id}
+        return {
+            "token": self.telegram_token, 
+            "chat_id": self.telegram_chat_id,
+            "debug_chat_id": self.telegram_debug_chat_id
+        }
 
     def is_telegram_configured(self) -> bool:
         """Check if Telegram is properly configured."""
         telegram_cfg = self.get_telegram_config()
         return bool(telegram_cfg["token"] and telegram_cfg["chat_id"])
+    
+    def is_debug_enabled_for_chat(self, chat_id: int) -> bool:
+        """Check if debug mode (trace URLs) should be enabled for a specific chat.
+        
+        Args:
+            chat_id: The Telegram chat ID to check
+            
+        Returns:
+            True if trace URLs should be shown for this chat
+        """
+        # Show trace URLs if global debug mode is on OR if chat is in debug chat list
+        return self.debug_mode or (chat_id in (self.telegram_debug_chat_id or []))
 
     def get_agent_instructions(self, mode: str = "normal") -> str:
         """Get the agent instructions for specified mode.

@@ -229,7 +229,7 @@ class TelegramBotHandler:
                 logger.error(f"Error in ask_command handler: {str(e)}", exc_info=True)
                 self.send_error_reply(message, "Sorry, there was an error processing your question. Please try again.")
     
-    async def process_question_async(self, question_text, conversation_history=None, agent_context=None):
+    async def process_question_async(self, question_text, conversation_history=None, agent_context=None, chat_id=None):
         # Build context with conversation history
         context_update = {}
         if agent_context:
@@ -257,7 +257,8 @@ class TelegramBotHandler:
         agent_response_data = await self.agent_manager.process_message(
             message=question_with_context,
             streaming=False,
-            context_update=context_update
+            context_update=context_update,
+            chat_id=chat_id
         )
         return agent_response_data
 
@@ -285,17 +286,18 @@ class TelegramBotHandler:
 
         loop = asyncio.new_event_loop()
         try:
-            # Pass conversation history and context for replies
+            # Pass conversation history, context, and chat_id for replies
             agent_response_data = loop.run_until_complete(
                 self.process_question_async(
                     question_text,
                     conversation_history=user_session.get("history", []) if is_reply else None,
-                    agent_context=user_session.get("agent_context", {})
+                    agent_context=user_session.get("agent_context", {}),
+                    chat_id=message.chat.id
                 )
             )
             
             actual_output = agent_response_data["output"]
-            trace_url = agent_response_data.get("trace_url")  # May be None if debug_mode is False
+            trace_url = agent_response_data.get("trace_url")  # May be None if debug not enabled for this chat
 
             if trace_url:
                 logger.debug(f"Trace URL: {trace_url}")
@@ -314,8 +316,8 @@ class TelegramBotHandler:
 
             logger.debug(f"Response preview: {actual_output[:100]}...")
             
-            # Format response based on debug mode
-            if self.debug_mode and trace_url:
+            # Format response based on whether trace URL is included for this chat
+            if trace_url:
                 # Send message without parse_mode to avoid entity parsing errors
                 # Append trace URL as plain text
                 response_with_trace = f"{actual_output}\n\n🔍 View trace: {trace_url}"
