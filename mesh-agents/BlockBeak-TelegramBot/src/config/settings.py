@@ -87,6 +87,11 @@ class Settings:
         # Debug settings
         self.debug_mode = os.getenv("DEBUG_MODE", "false").lower() in ["true", "1", "yes"]
         logger.info(f"DEBUG_MODE is {'enabled' if self.debug_mode else 'disabled'}")
+        
+        # Agent turn limits
+        self.max_turns_normal = int(os.getenv("MAX_TURNS_NORMAL", "15"))
+        self.max_turns_deep = int(os.getenv("MAX_TURNS_DEEP", "30"))
+        logger.debug(f"Max turns - Normal: {self.max_turns_normal}, Deep: {self.max_turns_deep}")
 
         # Set OPENAI_API_KEY for OpenAI agents library compatibility
         if self.api_key and self.provider == "openai":

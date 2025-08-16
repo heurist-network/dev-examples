@@ -87,6 +87,9 @@ instructions: |
     * Missing critical price/volume/liquidity data
     * Token name/symbol doesn't match the address
     * Data appears outdated (>24h old for market data)
+  - It's totally common for a token to have multiple DEX pools. Small pools can be safely ignored. Focus on large pools ONLY.
+  - CRITICAL: Always prioritize pools with significant liquidity (>$10K) to avoid misleading data from micro-pools
+  - When analyzing token data, distinguish between different chains and select the most liquid pool for accurate price/volume analysis
   </token_strategy>
   
   <web_search_strategy>

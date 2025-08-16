@@ -326,6 +326,10 @@ class AgentManager:
         # Select instructions based on mode
         instructions = self.instructions_deep if mode == "deep" else self.instructions_normal
         
+        # Set max turns based on mode - deep analysis needs more turns
+        settings = Settings()
+        max_turns = settings.max_turns_deep if mode == "deep" else settings.max_turns_normal
+        
         # Adjust model settings based on mode and model type
         # GPT-5 models don't support temperature but support reasoning
         is_gpt5_model = "gpt-5" in self.model.lower()
@@ -400,6 +404,7 @@ class AgentManager:
                         starting_agent=agent,
                         input=input_payload,
                         context=self.context,
+                        max_turns=max_turns,  # Dynamic based on analysis mode
                     )
 
                     # Update context with any new values from result
