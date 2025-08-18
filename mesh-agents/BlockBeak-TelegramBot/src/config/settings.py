@@ -114,6 +114,9 @@ class Settings:
         self.xmtp_agent_endpoint = os.getenv("XMTP_AGENT_ENDPOINT", "http://127.0.0.1:8000")
 
         self.agent_instructions = self._load_agent_instructions()
+        
+        # Session settings
+        self.session_config = self._load_session_config()
 
         logger.info(f"Configuration loaded successfully for provider: {self.provider}")
         self._initialized = True
@@ -169,8 +172,14 @@ class Settings:
         """Get current date context for instruction template injection."""
         try:
             now = datetime.now()
+            # Get UTC time as well for more accurate timestamps
+            from datetime import timezone
+            now_utc = datetime.now(timezone.utc)
+            
             return {
                 "current_date": now.strftime("%A, %B %d, %Y"),
+                "current_datetime": now.strftime("%Y-%m-%d %H:%M %Z").strip() or now.strftime("%Y-%m-%d %H:%M"),
+                "current_datetime_utc": now_utc.strftime("%Y-%m-%d %H:%M UTC"),
                 "current_year": now.strftime("%Y"),
                 "current_month_year": now.strftime("%B %Y"),
             }
@@ -180,6 +189,8 @@ class Settings:
             # Fallback to basic values
             return {
                 "current_date": "Date unavailable",
+                "current_datetime": "DateTime unavailable",
+                "current_datetime_utc": "DateTime unavailable",
                 "current_year": "2025",
                 "current_month_year": "Month unavailable",
             }
@@ -320,6 +331,17 @@ class Settings:
         if mode not in ["normal", "deep"]:
             mode = "normal"
         return self._load_instructions_by_mode(mode)
+
+    def _load_session_config(self):
+        """Load session configuration from environment"""
+        from src.core.session.types import SessionConfig
+        return SessionConfig(
+            max_items=int(os.getenv("SESSION_MAX_ITEMS", "50")),
+            window_size=int(os.getenv("SESSION_WINDOW_SIZE", "20")),
+            ttl_hours=int(os.getenv("SESSION_TTL_HOURS", "168")),
+            cache_enabled=os.getenv("SESSION_CACHE_ENABLED", "true").lower() == "true",
+            cache_ttl_seconds=int(os.getenv("SESSION_CACHE_TTL", "300"))
+        )
 
     def get_xmtp_config(self) -> Dict[str, Any]:
         """Get the XMTP configuration settings."""

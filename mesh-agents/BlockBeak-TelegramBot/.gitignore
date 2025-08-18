@@ -58,3 +58,7 @@ Thumbs.db
 xmtp-gpt/*.db3
 xmtp-gpt/*.db3-*
 xmtp-gpt/*.db3.sqlcipher_salt
+
+# Ignore data folder
+data/
+../data/

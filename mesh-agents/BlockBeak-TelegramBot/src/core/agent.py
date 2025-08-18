@@ -303,6 +303,7 @@ class AgentManager:
         context_update: Optional[Dict[str, Any]] = None,
         force_mode: Optional[AgentMode] = None,
         chat_id: Optional[int] = None,
+        session: Optional["CustomSession"] = None,
     ) -> Union[Dict[str, str], AsyncGenerator[str, None]]:
         """Process a user message and return the agent's response
         
@@ -312,6 +313,7 @@ class AgentManager:
             context_update: Additional context to update
             force_mode: Force a specific mode ('normal' or 'deep'), otherwise auto-detect
             chat_id: Optional Telegram chat ID for per-chat debug decisions
+            session: Optional CustomSession for conversation history management
         """
         if context_update:
             self.context.update(context_update)
@@ -399,13 +401,26 @@ class AgentManager:
                         input_payload = message
                         logger.debug("Using text-only input")
 
-                    result = await self._execute_with_retry(
-                        Runner.run,
-                        starting_agent=agent,
-                        input=input_payload,
-                        context=self.context,
-                        max_turns=max_turns,  # Dynamic based on analysis mode
-                    )
+                    # Use session if provided
+                    if session:
+                        # Session handles all history automatically
+                        result = await self._execute_with_retry(
+                            Runner.run,
+                            starting_agent=agent,
+                            input=input_payload,  # Preserve multimodal input when available
+                            context=self.context,
+                            max_turns=max_turns,
+                            session=session  # Pass session to Runner
+                        )
+                    else:
+                        # Fallback to existing behavior
+                        result = await self._execute_with_retry(
+                            Runner.run,
+                            starting_agent=agent,
+                            input=input_payload,
+                            context=self.context,
+                            max_turns=max_turns,
+                        )
 
                     # Update context with any new values from result
                     if hasattr(result, "context") and result.context:

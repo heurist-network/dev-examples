@@ -6,6 +6,7 @@ import telebot
 import re
 from src.core.agent import create_agent_manager
 from src.config.settings import Settings
+from src.core.session.manager import get_session_manager, SessionType
 
 # Enable logging
 logging.basicConfig(
@@ -29,7 +30,11 @@ class TelegramBotHandler:
         self.agent_manager = create_agent_manager()
         self.debug_mode = self.settings.debug_mode
         
-        self.active_users = {}
+        # Initialize session manager
+        self.session_manager = get_session_manager()
+        asyncio.create_task(self.session_manager.start_cleanup_task())
+        
+        # Keep minimal state for backward compatibility
         # Track conversation threads: message_id -> conversation_context
         self.conversation_threads = {}
         
@@ -68,16 +73,22 @@ class TelegramBotHandler:
             
         return is_authorized
     
-    def get_or_create_user_session(self, user_id, first_name, username):
-        """Get or create a user session, centralizing the initialization logic"""
-        if user_id not in self.active_users:
-            self.active_users[user_id] = {
-                "name": first_name,
-                "username": username,
-                "history": [],
-                "agent_context": {}  # Store agent context for this user
-            }
-        return self.active_users[user_id]
+    async def _get_session_id(self, message):
+        """Get session ID for a message"""
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        if chat_id < 0:  # Group chat
+            return self.session_manager.get_session_id(
+                SessionType.TELEGRAM_GROUP,
+                chat_id=chat_id,
+                user_id=user_id
+            )
+        else:  # Private chat
+            return self.session_manager.get_session_id(
+                SessionType.TELEGRAM_USER,
+                user_id=user_id
+            )
     
     def extract_entities(self, message):
         """Extract entities (like hyperlinks) from a user input message in TG and format them to texts for better processing"""
@@ -128,13 +139,6 @@ class TelegramBotHandler:
             
             user_id = message.from_user.id
             logger.info(f"Processing reply from user {message.from_user.username or user_id}")
-            
-            # Get or create user session
-            self.get_or_create_user_session(
-                user_id,
-                message.from_user.first_name,
-                message.from_user.username
-            )
             
             # Check if this is a reply to a known bot message
             replied_msg_id = message.reply_to_message.message_id
@@ -191,14 +195,22 @@ class TelegramBotHandler:
             if not self.is_authorized_chat(message):
                 return
                 
-            user_id = message.from_user.id
-            if user_id in self.active_users:
-                self.active_users[user_id]["history"] = []
-                self.active_users[user_id]["agent_context"] = {}
+            # Clear session using async function
+            async def clear_session_async():
+                session_id = await self._get_session_id(message)
+                session = await self.session_manager.get_or_create_session(session_id)
+                await session.clear_session()
+                
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(clear_session_async())
                 self.bot.reply_to(message, "✅ Your conversation history has been cleared.")
-                logger.info(f"Cleared conversation history for user {user_id}")
-            else:
-                self.bot.reply_to(message, "No conversation history to clear.")
+                logger.info(f"Cleared session for message from {message.from_user.id}")
+            except Exception as e:
+                logger.error(f"Error clearing session: {e}")
+                self.bot.reply_to(message, "❌ Error clearing conversation history.")
+            finally:
+                loop.close()
         
         @self.bot.message_handler(commands=['ask'])
         def ask_command(message):
@@ -210,12 +222,6 @@ class TelegramBotHandler:
             logger.debug(f"Authorization passed for /ask command in chat {message.chat.id}")    
             user_id = message.from_user.id
             logger.info(f"Processing /ask command from user {message.from_user.username or user_id}, text: '{message.text}'")
-            
-            self.get_or_create_user_session(
-                user_id, 
-                message.from_user.first_name, 
-                message.from_user.username
-            )
             
             # Reject empty questions
             if ' ' not in message.text or len(message.text) < 5:
@@ -229,42 +235,19 @@ class TelegramBotHandler:
                 logger.error(f"Error in ask_command handler: {str(e)}", exc_info=True)
                 self.send_error_reply(message, "Sorry, there was an error processing your question. Please try again.")
     
-    async def process_question_async(self, question_text, conversation_history=None, agent_context=None, chat_id=None):
-        # Build context with conversation history
-        context_update = {}
-        if agent_context:
-            context_update.update(agent_context)
-        
-        if conversation_history and len(conversation_history) > 0:
-            # Format conversation history for the agent
-            history_text = ""
-            for entry in conversation_history[-10:]:  # Last 10 messages for context
-                role = entry["role"]
-                content = entry["content"]
-                if role == "user":
-                    history_text += f"User: {content}\n"
-                else:
-                    history_text += f"Assistant: {content}\n"
-            
-            # Add formatted history to context
-            context_update["conversation_history"] = history_text.strip()
-            
-            # Prepend conversation context to the current question
-            question_with_context = f"Previous conversation:\n{history_text}\n\nCurrent question: {question_text}"
-        else:
-            question_with_context = question_text
-        
+    async def process_question_async(self, question_text, session, chat_id=None):
+        """Process question using session for history management"""
+        # Session handles all history automatically, just pass the message
         agent_response_data = await self.agent_manager.process_message(
-            message=question_with_context,
+            message=question_text,
             streaming=False,
-            context_update=context_update,
+            session=session,
             chat_id=chat_id
         )
         return agent_response_data
 
     def process_message(self, message, is_reply=False):
         user_id = message.from_user.id
-        user_session = self.active_users.get(user_id, {})
 
         # Handle entities if present
         if hasattr(message, 'entities') and message.entities:
@@ -277,37 +260,31 @@ class TelegramBotHandler:
             question_text = re.sub(r'^\/ask\s+', '', question_text)
         
         logger.info(f"Question extracted: '{question_text}' (is_reply: {is_reply})")
-
-        # Add user message to history
-        user_session["history"].append({"role": "user", "content": question_text})
         
         waiting_msg = self.bot.reply_to(message, "Processing your request...")
         self.bot.send_chat_action(message.chat.id, 'typing')
 
+        async def process_with_session():
+            # Get session for this user/chat
+            session_id = await self._get_session_id(message)
+            session = await self.session_manager.get_or_create_session(session_id)
+            
+            # Process message with session
+            return await self.process_question_async(
+                question_text,
+                session=session,
+                chat_id=message.chat.id
+            )
+
         loop = asyncio.new_event_loop()
         try:
-            # Pass conversation history, context, and chat_id for replies
-            agent_response_data = loop.run_until_complete(
-                self.process_question_async(
-                    question_text,
-                    conversation_history=user_session.get("history", []) if is_reply else None,
-                    agent_context=user_session.get("agent_context", {}),
-                    chat_id=message.chat.id
-                )
-            )
+            agent_response_data = loop.run_until_complete(process_with_session())
             
             actual_output = agent_response_data["output"]
-            trace_url = agent_response_data.get("trace_url")  # May be None if debug not enabled for this chat
+            trace_url = agent_response_data.get("trace_url")
 
             if trace_url:
                 logger.debug(f"Trace URL: {trace_url}")
-            
-            # Add assistant response to history
-            user_session["history"].append({"role": "assistant", "content": actual_output})
-            
-            # Update agent context if provided
-            if "context" in agent_response_data:
-                user_session["agent_context"].update(agent_response_data["context"])
             
             try:
                 self.bot.delete_message(message.chat.id, waiting_msg.message_id)
@@ -318,8 +295,6 @@ class TelegramBotHandler:
             
             # Format response based on whether trace URL is included for this chat
             if trace_url:
-                # Send message without parse_mode to avoid entity parsing errors
-                # Append trace URL as plain text
                 response_with_trace = f"{actual_output}\n\n🔍 View trace: {trace_url}"
                 bot_reply = self.bot.reply_to(
                     message,
@@ -327,7 +302,6 @@ class TelegramBotHandler:
                     disable_web_page_preview=True
                 )
             else:
-                # Send only the output without trace URL
                 bot_reply = self.bot.reply_to(message, actual_output)
             
             # Store the conversation thread

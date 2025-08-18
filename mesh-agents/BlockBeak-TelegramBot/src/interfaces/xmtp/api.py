@@ -8,6 +8,7 @@ import uvicorn
 
 from src.core.agent import create_agent_manager, AgentError, detect_mode
 from src.config.settings import Settings
+from src.core.session.manager import get_session_manager, SessionType
 
 # Configure logging
 logging.basicConfig(
@@ -47,6 +48,9 @@ class ModeDetectionResponse(BaseModel):
 # Global agent manager cache per conversation
 conversation_agents: Dict[str, Any] = {}
 
+# Initialize session manager
+session_manager = get_session_manager()
+
 # Get DEBUG_MODE from settings
 settings = Settings()
 DEBUG_MODE = settings.debug_mode
@@ -77,7 +81,14 @@ async def process_xmtp_message(message: XMTPMessage):
         if message.replyContext:
             logger.info(f"Message is a reply to: {message.replyContext}")
         
-        # Get or create agent manager for this conversation
+        # Get session for conversation
+        session_id = session_manager.get_session_id(
+            SessionType.XMTP_CONVERSATION,
+            conversation_id=message.conversationId
+        )
+        session = await session_manager.get_or_create_session(session_id)
+        
+        # Get or create agent manager for this conversation (can be shared now)
         agent_manager = get_or_create_agent_manager(message.conversationId)
         
         # Prepare the message content with reply context if available
@@ -96,21 +107,28 @@ async def process_xmtp_message(message: XMTPMessage):
             context_update["reply_context"] = message.replyContext
         
         # Handle image meta data - merge into context if present, clear if absent
+        has_image = False
         if message.meta:
             logger.info(f"Context update keys: {list(message.meta.keys())}")
             context_update.update(message.meta)
             # Log if image data is present (without logging the actual data URL for brevity)
             if "image_data_url" in message.meta:
                 logger.info(f"Image data received - filename: {message.meta.get('filename', 'unknown')}, mime_type: {message.meta.get('mime_type', 'unknown')}")
+                has_image = True
         else:
             # Clear any previous image data to ensure text-only turns don't retain old images
             context_update["image_data_url"] = None
         
+        # If an image is present, do not pass session to allow multimodal list input
+        # We'll persist this turn into our session storage manually afterwards.
+        session_for_call = None if has_image else session
+
         # Process the message through the agent
         result = await agent_manager.process_message(
             message=processed_message,
             streaming=False,
-            context_update=context_update
+            context_update=context_update,
+            session=session_for_call
         )
         
         logger.info(f"Agent response generated for conversation {message.conversationId}")
@@ -124,6 +142,22 @@ async def process_xmtp_message(message: XMTPMessage):
             response_data.trace_url = result["trace_url"]
             logger.debug(f"Trace URL included in response: {result['trace_url']}")
         
+        # Persist this turn to session storage when we skipped session_for_call
+        # to keep conversation history consistent (avoid storing large base64).
+        try:
+            if has_image and session is not None and isinstance(processed_message, str):
+                user_summary = processed_message
+                # Add a compact image note without embedding data URL
+                filename = message.meta.get("filename", "image") if message.meta else "image"
+                mime_type = message.meta.get("mime_type", "image/*") if message.meta else "image/*"
+                user_summary += f"\n[Attached image: {filename} ({mime_type})]"
+                await session.add_items([
+                    {"role": "user", "content": user_summary},
+                    {"role": "assistant", "content": result.get("output", "")},
+                ])
+        except Exception as persist_err:
+            logger.warning(f"Failed to persist image turn to session: {persist_err}")
+
         return response_data
         
     except AgentError as e:
@@ -191,6 +225,7 @@ async def health_check():
 async def startup_event():
     """Application startup event."""
     logger.info("Starting BlockBeak XMTP Agent API")
+    await session_manager.start_cleanup_task()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -198,6 +233,8 @@ async def shutdown_event():
     logger.info("Shutting down BlockBeak XMTP Agent API")
     # Clear conversation cache
     conversation_agents.clear()
+    # Stop session cleanup task
+    await session_manager.stop_cleanup_task()
 
 def run_api(host: str = "127.0.0.1", port: int = 8000, reload: bool = False):
     """Run the XMTP API server."""

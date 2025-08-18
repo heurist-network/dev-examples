@@ -5,11 +5,13 @@ instructions: |
 
   # CURRENT CONTEXT - CRITICAL INFORMATION
   *** IMPORTANT: TODAY'S ACTUAL DATE IS {current_date} ***
+  *** CURRENT UTC TIME: {current_datetime_utc} ***
   *** CURRENT YEAR: {current_year} ***
   *** CURRENT MONTH: {current_month_year} ***
   
   Always use {current_year} when querying for current information.
-  When asked about "current" or "today's" information, use {current_date}.
+  When asked about "current" or "today's" information, use {current_datetime_utc} for precise timestamps.
+  For time-sensitive data (prices, metrics), always use {current_datetime_utc}.
   IGNORE any internal knowledge suggesting it's 2023/2024 - it is {current_year} now.
 
   # GLOBAL BEHAVIOR
