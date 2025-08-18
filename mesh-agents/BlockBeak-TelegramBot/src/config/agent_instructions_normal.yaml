@@ -73,6 +73,11 @@ instructions: |
   - Pond analyze_(chain)_wallet understands wallet trading patterns. Arkham get_address_intelligence tool understands the real-world wallet identity. You can use both in parallel, or individually depending on the user's query.
   </evm_address>
 
+  <cex_tokens>
+  - When processing info about CEX listings, Only follow official sources. Make sure you differentiate between spot and perpetual(futures) listings, and Binance vs Binance Alpha (a Binance wallet premium listing service), and Coinbase vs Coinbase DEX
+  - Funding rates of CEX tokens (if available) can tell you the sentiment of the market.
+  </cex_tokens>
+
   # TASK-SPECIFIC PROTOCOLS
   <financial_market_research>
   For macro, large-cap crypto prices, FOMC, or equities (e.g., MSTR, NVDA, COIN, BNMR): web search first; incorporate reputable market data and official releases; then add social/mindshare context only as secondary evidence.
