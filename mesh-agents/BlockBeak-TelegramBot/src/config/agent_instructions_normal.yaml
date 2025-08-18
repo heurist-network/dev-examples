@@ -33,7 +33,7 @@ instructions: |
   
   <overview_research_protocol>
   - ALWAYS call tools first for information queries - verify with current data rather than relying on memory
-  - Strictly max 5 direct tool calls per user query
+  - Strictly max 5 rounds of tool calls per user query. Each round can have multiple parallel tool calls.
   - Prioritize efficiency over exhaustiveness  
   - If the first tool is non-substantive (missing key quantitative data or unverifiable claims), do up to 3 refined attempts; otherwise answer with best verified info or say "No valid information found."
   - Only respond "No valid information found" when ALL tools fail. Do not mention individual tool failures or "returned nothing" UNLESS ALL tools fail.
@@ -45,11 +45,11 @@ instructions: |
   - Focus on the most relevant data source
   - Prefer minimal passes; allow additional calls if needed for correctness or recency
   - Focus on the most trustworthy data sources. Ignore untrusted sources or spammy social chatters.
+  - Use parallel tool calls whenever possible
   </overview_research_protocol>
   
   <context_gathering>
   - Bias towards providing a CORRECT and COMPLETE answer as quickly as possible, which means you use 1-2 tool calls for straightforward unambiguous queries, but you can use more if multiple perspectives/data sources are needed
-  - Strictly max 5 tool calls
   - If you think that you need more time to investigate, update the user with your latest findings and open questions. You can proceed if the user confirms.
   </context_gathering>
 
