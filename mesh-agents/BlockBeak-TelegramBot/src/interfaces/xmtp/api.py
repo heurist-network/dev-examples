@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 
-from src.core.agent import create_agent_manager, AgentError
+from src.core.agent import create_agent_manager, AgentError, detect_mode
 from src.config.settings import Settings
 
 # Configure logging
@@ -37,6 +37,12 @@ class AgentResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+
+class ModeDetectionRequest(BaseModel):
+    message: str
+
+class ModeDetectionResponse(BaseModel):
+    mode: str
 
 # Global agent manager cache per conversation
 conversation_agents: Dict[str, Any] = {}
@@ -131,6 +137,34 @@ async def process_xmtp_message(message: XMTPMessage):
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
+        )
+
+@app.post("/detect-mode", response_model=ModeDetectionResponse)
+async def detect_agent_mode(request: ModeDetectionRequest):
+    """
+    Detect which agent mode (normal/deep) should be used for a message.
+    Fast endpoint that only does mode detection without processing.
+    
+    Args:
+        request: ModeDetectionRequest containing the message text
+        
+    Returns:
+        ModeDetectionResponse containing the detected mode
+    """
+    try:
+        logger.info(f"Detecting mode for message: {request.message[:50]}...")
+        
+        # Use the existing mode detection logic
+        detected_mode = detect_mode(request.message)
+        
+        logger.info(f"Mode detected: {detected_mode}")
+        return ModeDetectionResponse(mode=detected_mode)
+        
+    except Exception as e:
+        logger.error(f"Error detecting mode: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Mode detection error: {str(e)}"
         )
 
 @app.get("/health", response_model=HealthResponse)

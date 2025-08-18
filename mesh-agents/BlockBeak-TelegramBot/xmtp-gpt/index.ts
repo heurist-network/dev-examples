@@ -192,6 +192,35 @@ async function sendToAgent(conversation: any, sender: string, text: string, imag
   console.log(`  - Has reply context: ${!!replyContext}`);
   
   try {
+    // Phase 1: Detect mode first
+    console.log(`  🔍 Phase 1: Detecting agent mode...`);
+    const detectModeEndpoint = agentEndpoint.replace('/inbox', '/detect-mode');
+    
+    try {
+      const modeResponse = await fetch(detectModeEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+        signal: AbortSignal.timeout(10000) // 10 second timeout for mode detection
+      });
+      
+      if (modeResponse.ok) {
+        const modeData = await modeResponse.json();
+        const detectedMode = modeData.mode;
+        console.log(`  ✅ Mode detected: ${detectedMode}`);
+        
+        // If deep mode, send waiting message
+        if (detectedMode === "deep") {
+          console.log(`  🧠 Deep mode activated, sending waiting message...`);
+          await conversation.send("🧠 Deep analysis mode activated. Conducting comprehensive research...");
+        }
+      } else {
+        console.warn(`  ⚠️ Mode detection failed: ${modeResponse.status}, continuing with normal flow`);
+      }
+    } catch (modeError) {
+      console.warn(`  ⚠️ Mode detection error:`, modeError, `continuing with normal flow`);
+    }
+
     // 发送反应表情（如果有消息ID）
     if (messageId) {
       try {
@@ -208,6 +237,9 @@ async function sendToAgent(conversation: any, sender: string, text: string, imag
         // 继续处理，即使反应失败
       }
     }
+    
+    // Phase 2: Process message with agent
+    console.log(`  📤 Phase 2: Processing message with agent...`);
     
     const payload: any = {
       conversationId: conversation.id,
@@ -317,13 +349,28 @@ async function processMessages(client: Client<any>) {
     
     console.log(`\n📨 Incoming message from ${message.senderInboxId.slice(0,8)}...`);
     
+    // Skip system messages like read receipts, reactions, etc.
+    const systemMessageTypes = ['readReceipt', 'reaction', 'groupUpdated', 'groupMembershipChange'];
+    if (message.contentType?.typeId && systemMessageTypes.includes(message.contentType.typeId)) {
+      console.log(`  ⏭️  Skipping system message: ${message.contentType.typeId}`);
+      continue;
+    }
+    
     const conversation = await client.conversations.getConversationById(message.conversationId);
     if (!conversation) continue;
     
     const isGroup = conversation instanceof Group;
-    const isText = message.contentType?.typeId === "text";
+    // Check for text messages - handle case where contentType might be undefined for plain text
+    const isText = !message.contentType || message.contentType?.typeId === "text";
     const isReply = message.contentType?.sameAs(ContentTypeReply);
-    const isImage = message.contentType?.sameAs(ContentTypeRemoteAttachment);
+    const isImage = message.contentType?.sameAs(ContentTypeRemoteAttachment) || 
+                    message.contentType?.typeId === "remoteStaticAttachment";
+    
+    // Skip unsupported message types
+    if (!isText && !isReply && !isImage) {
+      console.log(`  ⏭️  Skipping unsupported message type: ${message.contentType?.typeId || 'undefined'}`);
+      continue;
+    }
     
     console.log(`  Type: ${isText ? 'TEXT' : isReply ? 'REPLY' : isImage ? 'IMAGE' : 'UNKNOWN'}, Group: ${isGroup}`);
     
