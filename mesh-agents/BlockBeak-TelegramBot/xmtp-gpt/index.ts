@@ -1,10 +1,11 @@
 import {
   createSigner,
+  createUser,
   getEncryptionKeyFromHex,
   logAgentDetails,
   validateEnvironment,
 } from "./helpers/client.js";
-import { Client, type XmtpEnv } from "@xmtp/node-sdk";
+import { Client, Group, type XmtpEnv } from "@xmtp/node-sdk";
 import {
   ReactionCodec,
   ContentTypeReaction,
@@ -23,9 +24,7 @@ import {
 } from "@xmtp/content-type-remote-attachment";
 import { createHash } from "node:crypto";
 
-/* Get the wallet key associated to the public key of
- * the agent and the encryption key for the local db
- * that stores your agent's messages */
+// Load environment variables - 一次性加载，不要重复读文件
 const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
   validateEnvironment([
     "WALLET_KEY",
@@ -34,189 +33,375 @@ const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
     "AGENT_ENDPOINT",
   ]);
 
-/* Default agent endpoint if not provided */
-const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8000/inbox";
-
-/* Check DEBUG_MODE environment variable */
-const DEBUG_MODE = process.env.DEBUG_MODE?.toLowerCase() === 'true';
-console.log(`DEBUG_MODE is ${DEBUG_MODE ? 'enabled' : 'disabled'}`);
-
-type ImageMeta = {
-  image_data_url: string;
-  filename?: string;
-  mime_type?: string;
-  content_digest?: string;
-};
-
-type PendingTurn = {
-  senderInboxId: string;
-  text?: string;
-  imageMeta?: ImageMeta | null;
-  replyContext?: string | null;
-  timer?: ReturnType<typeof setTimeout> | null;
-  hasUserText?: boolean; // Track if user provided explicit text
-  imageTimestamp?: number; // Timestamp when image was received
-  textTimestamp?: number; // Timestamp when text was received
-};
-
-const DEBOUNCE_MS = 800; // aggregation window for pairing text+image (reduced from 1200ms)
-const IMMEDIATE_FLUSH_MS = 80; // tiny delay when both parts already present
-const PAIRING_WINDOW_MS = 3000; // only pair messages within 3 seconds of each other
-
-const pendingByConversation = new Map<string, PendingTurn>();
-const lastProcessedByConversation = new Map<string, number>();
-
-// Cleanup function to remove stale pending items
-function cleanupStalePending() {
-  const now = Date.now();
-  const STALE_THRESHOLD = PAIRING_WINDOW_MS * 2; // 6 seconds
-  
-  for (const [convId, pending] of pendingByConversation.entries()) {
-    const imageAge = pending.imageTimestamp ? now - pending.imageTimestamp : 0;
-    const textAge = pending.textTimestamp ? now - pending.textTimestamp : 0;
-    const maxAge = Math.max(imageAge, textAge);
-    
-    if (maxAge > STALE_THRESHOLD) {
-      console.log(`Cleanup: Removing stale pending item for ${convId} (age: ${maxAge}ms)`);
-      if (pending.timer) clearTimeout(pending.timer);
-      pendingByConversation.delete(convId);
-    }
-  }
-}
-
-// Run cleanup every 30 seconds
-setInterval(cleanupStalePending, 30000);
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Get the original message that is being replied to
- */
-async function getReferencedMessage(conversation: any, messageId: string): Promise<string | null> {
+// 可选的别名配置 - 使用 validateEnvironment 以确保从 .env 加载
+const optionalEnv = (() => {
   try {
-    // Get all messages in the conversation
-    const messages = await conversation.messages();
+    return validateEnvironment(["BOT_MENTION_ALIASES"]);
+  } catch {
+    return { BOT_MENTION_ALIASES: "" };
+  }
+})();
+const BOT_MENTION_ALIASES = optionalEnv.BOT_MENTION_ALIASES || process.env.BOT_MENTION_ALIASES || "";
+
+const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8000/inbox";
+const DEBUG_MODE = process.env.DEBUG_MODE?.toLowerCase() === 'true';
+
+// 简单的睡眠函数
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 在启动时构建所有mention模式 - 不要在运行时重复计算
+let botMentionPatterns: Set<string> = new Set();
+
+function initializeMentions(client: any) {
+  const address = (client.accountIdentifier?.identifier || "").toLowerCase();
+  if (!address) return;
+  
+  const with0x = address.startsWith("0x") ? address : `0x${address}`;
+  
+  // 添加地址的各种格式
+  botMentionPatterns.add(`@${with0x}`);
+  botMentionPatterns.add(`@${with0x.slice(0, 6)}…${with0x.slice(-4)}`);
+  botMentionPatterns.add(`@${with0x.slice(0, 6)}...${with0x.slice(-4)}`);
+  
+  // 添加别名
+  const aliases = (process.env.BOT_MENTION_ALIASES || BOT_MENTION_ALIASES || "")
+    .split(/[,\s]+/)
+    .filter(Boolean)
+    .map(s => `@${s.replace(/^@+/, "").toLowerCase()}`);
+  
+  aliases.forEach(alias => botMentionPatterns.add(alias));
+  
+  console.log("Bot will respond to:", Array.from(botMentionPatterns));
+}
+
+// 简化的mention检测 - 一行搞定
+function isMentioned(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  return Array.from(botMentionPatterns).some(pattern => lowerText.includes(pattern));
+}
+
+// 清理文本中的bot mention，只保留实际内容
+function cleanBotMention(text: string): string {
+  let cleanedText = text;
+  
+  // 移除所有bot mention模式
+  for (const pattern of botMentionPatterns) {
+    // 移除@开头的mention
+    const regex = new RegExp(`@${pattern.replace('@', '')}\\s*`, 'gi');
+    cleanedText = cleanedText.replace(regex, '');
     
-    // Find the message with the matching ID
-    const referencedMessage = messages.find((msg: any) => msg.id === messageId);
-    
-    if (referencedMessage && referencedMessage.contentType?.typeId === "text") {
-      return referencedMessage.content as string;
+    // 也移除不带@的地址格式
+    const addressPattern = pattern.replace('@', '');
+    if (addressPattern.includes('…') || addressPattern.includes('...')) {
+      const shortPattern = addressPattern.replace(/[….]/g, '');
+      const shortRegex = new RegExp(`@${shortPattern}\\s*`, 'gi');
+      cleanedText = cleanedText.replace(shortRegex, '');
     }
-    
-    return null;
-  } catch (error) {
-    console.error("Error getting referenced message:", error);
+  }
+  
+  // 清理多余的空白字符
+  cleanedText = cleanedText.trim();
+  
+  console.log(`  🧹 Cleaned text: "${text}" -> "${cleanedText}"`);
+  return cleanedText;
+}
+
+// 获取被回复的消息
+async function getReplyContext(conversation: any, messageId: string): Promise<string | null> {
+  try {
+    const messages = await conversation.messages();
+    const original = messages.find((m: any) => m.id === messageId);
+    return original?.content || null;
+  } catch (e) {
     return null;
   }
 }
 
-async function flushPending(
-  client: Client<any>,
-  conversationId: string,
-): Promise<void> {
-  const pending = pendingByConversation.get(conversationId);
-  if (!pending) {
-    console.log(`flushPending: no pending for ${conversationId}`);
-    return;
+// 加载远程图片
+async function loadRemoteImage(attachment: RemoteAttachment, client: any) {
+  try {
+    console.log(`  🔍 Loading remote image: filename=${(attachment as any).filename}, size=${(attachment as any).contentLength || 'unknown'}`);
+    
+    const decrypted = await RemoteAttachmentCodec.load(attachment, client) as any;
+    
+    console.log(`  📊 Decrypted: mimeType=${decrypted.mimeType}, dataSize=${decrypted.data?.length || 'unknown'}`);
+    
+    // 验证解密后的数据
+    if (!decrypted.data || decrypted.data.length === 0) {
+      console.error("  ❌ Decrypted data is empty");
+      return null;
+    }
+    
+    // 检查数据大小是否合理（超过5MB的图片可能有问题）
+    const dataSizeMB = decrypted.data.length / 1024 / 1024;
+    if (dataSizeMB > 5) {
+      console.warn(`  ⚠️ Image data is very large: ${dataSizeMB.toFixed(2)} MB`);
+      
+      // 如果图片太大，尝试压缩或拒绝
+      if (dataSizeMB > 10) {
+        console.error("  ❌ Image too large (>10MB), rejecting");
+        return null;
+      }
+    }
+    
+    // 验证MIME类型
+    const mime = decrypted.mimeType || "application/octet-stream";
+    if (!mime.startsWith("image/")) {
+      console.warn(`  ⚠️ Unexpected MIME type: ${mime}`);
+    }
+    
+    // 转换为base64
+    const base64Data = Buffer.from(decrypted.data).toString("base64");
+    console.log(`  🔄 Base64 conversion: ${base64Data.length} chars`);
+    
+    const dataUrl = `data:${mime};base64,${base64Data}`;
+    
+    console.log(`  ✅ Image loaded successfully: ${mime}, ${dataSizeMB.toFixed(2)} MB`);
+    
+    return {
+      image_data_url: dataUrl,
+      filename: decrypted.filename,
+      mime_type: mime,
+    };
+  } catch (e) {
+    console.error("  ❌ Failed to load image:", e);
+    return null;
   }
+}
+
+// 消息配对机制 - 支持文本和图片的双向等待
+const recentMessages = new Map<string, { text?: string; imageData?: any; timestamp: number }>();
+
+// 清理过期消息
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of recentMessages.entries()) {
+    if (now - value.timestamp > 5000) { // 5秒后过期
+      recentMessages.delete(key);
+    }
+  }
+}, 10000); // 每10秒清理一次
+
+
+
+// 发送消息到Agent
+async function sendToAgent(conversation: any, sender: string, text: string, imageData?: any, replyContext?: string, messageId?: string) {
+  console.log(`\n🤖 Sending to agent:`);
+  console.log(`  - Text: "${text.slice(0, 100)}..."`);
+  console.log(`  - Has image: ${!!imageData}`);
+  console.log(`  - Has reply context: ${!!replyContext}`);
   
-  console.log(`flushPending: processing ${conversationId}, hasText=${!!pending.text}, hasImage=${!!pending.imageMeta}`);
-  pendingByConversation.delete(conversationId);
-
-  const conversation = await client.conversations.getConversationById(
-    conversationId,
-  );
-  if (!conversation) {
-    console.warn("flushPending: conversation not found", conversationId);
-    return;
-  }
-
-  const messageText = pending.text || "Describe the image";
-  const payload: any = {
-    conversationId,
-    sender: pending.senderInboxId,
-    message: messageText,
-    replyContext: pending.replyContext || null,
-  };
-  if (pending.imageMeta) {
-    payload.meta = pending.imageMeta;
-  }
-
-  console.log(`XMTP: flushPending payload:`, JSON.stringify({
-    ...payload,
-    meta: payload.meta ? `[Image data: ${payload.meta.filename || 'unknown'}]` : undefined
-  }, null, 2));
-
-  const maxRetries = 3;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  try {
+    // 发送反应表情（如果有消息ID）
+    if (messageId) {
+      try {
+        const reaction: Reaction = {
+          reference: messageId,
+          action: "added",
+          content: "👀",
+          schema: "unicode"
+        };
+        await conversation.send(reaction, ContentTypeReaction);
+        console.log(`  ✅ Sent reaction to message ${messageId.slice(0, 8)}...`);
+      } catch (reactionError) {
+        console.warn(`  ⚠️ Failed to send reaction:`, reactionError);
+        // 继续处理，即使反应失败
+      }
+    }
+    
+    const payload: any = {
+      conversationId: conversation.id,
+      sender,
+      message: text,
+    };
+    
+    if (replyContext) {
+      payload.replyContext = replyContext;
+    }
+    
+    if (imageData) {
+      payload.meta = imageData;
+      
+      // 检查图片数据大小
+      const imageSizeKB = (JSON.stringify(imageData).length / 1024);
+      console.log(`  - Image data size: ${imageSizeKB.toFixed(1)} KB`);
+      
+      if (imageSizeKB > 5000) { // 5MB
+        console.warn(`  ⚠️ Image data is very large (${imageSizeKB.toFixed(1)} KB), this might cause issues`);
+      }
+    }
+    
+    const requestBody = JSON.stringify(payload);
+    const totalSizeKB = requestBody.length / 1024;
+    console.log(`  - Total request size: ${totalSizeKB.toFixed(1)} KB`);
+    
+    // 如果请求太大，给出警告
+    if (totalSizeKB > 10000) { // 10MB
+      console.error(`  ❌ Request too large (${totalSizeKB.toFixed(1)} KB), this will likely fail`);
+      throw new Error(`Request too large: ${totalSizeKB.toFixed(1)} KB`);
+    }
+    
+    console.log(`  📤 Sending request to ${agentEndpoint}...`);
+    
+    // 先测试后端连接
     try {
-      const res = await fetch(agentEndpoint, {
+      console.log(`  🔍 Testing backend connection...`);
+      const testResponse = await fetch(`${agentEndpoint.replace('/inbox', '')}/health`, { 
+        method: 'GET',
+        signal: AbortSignal.timeout(5000) // 5秒测试
+      });
+      console.log(`  ✅ Backend health check: ${testResponse.status}`);
+    } catch (e) {
+      console.warn(`  ⚠️ Backend health check failed:`, e);
+    }
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log(`  ⏰ Request timeout after 60 seconds, aborting...`);
+      controller.abort();
+    }, 60000); // 60秒超时
+    
+    try {
+      const response = await fetch(agentEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(180000),
+        body: requestBody,
+        signal: controller.signal,
       });
-      if (!res.ok) {
-        throw new Error(`Agent API error: ${res.status} ${res.statusText}`);
-      }
-      const result = (await res.json()) as { response?: string; trace_url?: string };
-      const responseText = String(result.response || "");
       
-      // Log trace URL if available
-      if (result.trace_url) {
-        console.log(`Trace URL: ${result.trace_url}`);
-      }
+      clearTimeout(timeoutId);
       
-      console.log(
-        `Agent API response received: ${responseText.substring(0, 100)}...`,
-      );
+      console.log(`  📥 Response received: ${response.status} ${response.statusText}`);
       
-      // Format response based on DEBUG_MODE
-      let formattedResponse = responseText;
-      if (DEBUG_MODE && result.trace_url) {
-        formattedResponse = `${responseText}\n\n🔍 View trace: ${result.trace_url}`;
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`  ❌ Agent returned ${response.status}: ${errorText.slice(0, 200)}`);
+        throw new Error(`HTTP ${response.status}`);
       }
       
-      console.log(`Attempting to send response to XMTP conversation...`);
-      await conversation.send(formattedResponse);
-      console.log(`✓ Response sent successfully to XMTP conversation`);
-      // Mark as processed with current timestamp
-      lastProcessedByConversation.set(conversationId, Date.now());
-      return;
-    } catch (error) {
-      console.error(
-        `flushPending: agent call failed (attempt ${attempt}/${maxRetries}):`,
-        error,
-      );
-      if (attempt < maxRetries) {
-        const backoffMs = Math.min(2000, 300 * 2 ** (attempt - 1));
-        await sleep(backoffMs);
+      const data = await response.json();
+      const responseText = data.response || String(data);
+      console.log(`  ✅ Agent responded: "${responseText.slice(0, 100)}..."`);
+      await conversation.send(responseText);
+      
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      
+      if (error.name === 'AbortError') {
+        console.error(`  ❌ Request timed out after 60 seconds`);
+        await conversation.send("Sorry, the request timed out. Please try again with a smaller image.");
+      } else {
+        console.error(`  ❌ Network error:`, error);
+        await conversation.send("Sorry, I encountered a network error. Please try again.");
+      }
+      throw error; // 重新抛出错误以便上层处理
+    }
+    
+  } catch (error) {
+    console.error("  ❌ Agent error:", error);
+    await conversation.send("Sorry, I encountered an error processing your request.");
+  }
+}
+
+// 主消息处理循环 - 简化版本
+async function processMessages(client: Client<any>) {
+  console.log("Waiting for messages...");
+  
+  const stream = client.conversations.streamAllMessages();
+  
+  for await (const message of await stream) {
+    // 忽略自己的消息
+    if (message.senderInboxId.toLowerCase() === client.inboxId.toLowerCase()) {
+      continue;
+    }
+    
+    console.log(`\n📨 Incoming message from ${message.senderInboxId.slice(0,8)}...`);
+    
+    const conversation = await client.conversations.getConversationById(message.conversationId);
+    if (!conversation) continue;
+    
+    const isGroup = conversation instanceof Group;
+    const isText = message.contentType?.typeId === "text";
+    const isReply = message.contentType?.sameAs(ContentTypeReply);
+    const isImage = message.contentType?.sameAs(ContentTypeRemoteAttachment);
+    
+    console.log(`  Type: ${isText ? 'TEXT' : isReply ? 'REPLY' : isImage ? 'IMAGE' : 'UNKNOWN'}, Group: ${isGroup}`);
+    
+    // 提取发送者地址
+    const senderAddress = message.senderInboxId.slice(0, 6) + "..." + message.senderInboxId.slice(-4);
+    
+    // 处理文本消息（包括回复）
+    if (isText || isReply) {
+      const text = isReply ? ((message.content as Reply).content as string) : (message.content as string);
+      const replyContext = isReply ? await getReplyContext(conversation, (message.content as Reply).reference as string) : null;
+      
+      // 群组需要检查mention
+      if (isGroup && !isMentioned(text)) {
+        console.log(`  ❌ Group message without mention: "${text.slice(0, 50)}..."`);
         continue;
       }
-      // Final failure: apologize once
-      await conversation.send(
-        "Sorry, I encountered an error processing your message.",
-      );
+      
+      console.log(`  ✅ Processing message: "${text.slice(0, 50)}..."`);
+      
+      // 检查是否有等待配对的图片
+      const key = `${message.conversationId}:${message.senderInboxId}`;
+      const recent = recentMessages.get(key);
+      
+      if (recent && recent.imageData && !recent.text) {
+        // 找到了等待的图片，配对处理
+        console.log(`  🎯 Found waiting image, processing together`);
+        recentMessages.delete(key);
+        const cleanedText = cleanBotMention(text);
+        await sendToAgent(conversation, senderAddress, cleanedText, recent.imageData, replyContext || undefined, message.id);
+      } else {
+        // 没有等待的图片，只处理文本
+        const cleanedText = cleanBotMention(text);
+        await sendToAgent(conversation, senderAddress, cleanedText, undefined, replyContext || undefined, message.id);
+      }
+    }
+    
+    // 处理图片消息
+    else if (isImage) {
+      const imageData = await loadRemoteImage(message.content as RemoteAttachment, client);
+      if (!imageData) continue;
+      
+      const key = `${message.conversationId}:${message.senderInboxId}`;
+      
+      // 在群组中，需要配对文本
+      if (isGroup) {
+        console.log(`  🖼️ Image in group, storing and waiting for text...`);
+        
+        // 保存图片，等待文本
+        recentMessages.set(key, { imageData, timestamp: Date.now() });
+        
+        // 给文本一个机会到达
+        await sleep(1500); // 等待1.5秒
+        
+        // 检查是否有文本到达
+        const current = recentMessages.get(key);
+        if (current && current.text && current.imageData === imageData) {
+          // 文本已经到达并处理了图片，什么都不用做
+          console.log(`  ✅ Text already processed this image`);
+        } else if (current && current.imageData === imageData) {
+          // 还是只有图片，没有文本
+          console.log(`  ⏱️ No text arrived, keeping image in queue for later`);
+        }
+      } else {
+        // 私聊中直接处理图片
+        await sendToAgent(conversation, senderAddress, "Describe this image", imageData, undefined, message.id);
+      }
     }
   }
 }
 
-/**
- * Main function to run the agent
- * The agent routes all message processing to the Python backend,
- * enabling multi-round contextual conversations with advanced agent capabilities.
- */
+// 主函数 - 简化启动流程
 async function main() {
-  /* Create the signer using viem and parse the encryption key for the local db */
-  const signer = createSigner(WALLET_KEY);
-  const dbEncryptionKey = getEncryptionKeyFromHex(ENCRYPTION_KEY);
+  const user = createUser(WALLET_KEY);
+  const signer = createSigner(user.key);
 
   const client = await Client.create(signer, {
-    dbEncryptionKey,
-    env: XMTP_ENV as XmtpEnv,
+    env: (XMTP_ENV as XmtpEnv) || "production",
+    dbEncryptionKey: getEncryptionKeyFromHex(ENCRYPTION_KEY),
     codecs: [
       new ReactionCodec(),
       new ReplyCodec(),
@@ -225,269 +410,24 @@ async function main() {
     ],
   });
 
-  void logAgentDetails(client as any);
+  // 初始化mention模式
+  initializeMentions(client);
 
-  /* Sync the conversations from the network to update the local db */
-  console.log("✓ Syncing conversations...");
+  await logAgentDetails(client as any);
   await client.conversations.sync();
 
-  // Stream all messages for GPT responses
-  const messageStream = async () => {
-    console.log("Waiting for messages...");
-    const stream = client.conversations.streamAllMessages();
-    for await (const message of await stream) {
-      /* Ignore messages from the same agent */
-      if (message.senderInboxId.toLowerCase() === client.inboxId.toLowerCase()) {
-        continue;
-      }
-
-      console.log("incoming message", message);
-
-      const isText = message.contentType?.typeId === "text";
-      const isReply = message.contentType?.sameAs(ContentTypeReply);
-      const isRemoteAttachment =
-        message.contentType?.typeId === "remoteStaticAttachment" ||
-        message.contentType?.sameAs?.(ContentTypeRemoteAttachment);
-
-      let messageContent: string = "";
-      let replyContext: string | null = null;
-      let imageMeta: ImageMeta | null = null;
-      
-      if (!isText && !isReply && !isRemoteAttachment) {
-        // Not a supported message type; skip
-        continue;
-      }
-
-      /* Get the conversation from the local db early to reuse it */
-      const conversation = await client.conversations.getConversationById(
-        message.conversationId,
-      );
-
-      /* If the conversation is not found, skip the message */
-      if (!conversation) {
-        console.log("Unable to find conversation, skipping");
-        continue;
-      }
-
-      // Handle reply messages
-      if (isReply) {
-        const reply = message.content as Reply;
-        messageContent = reply.content as string;
-        
-        console.log(
-          `Received reply: "${messageContent}" by ${message.senderInboxId} (replying to message ID: ${reply.reference})`,
-        );
-        
-        // Get the original message being replied to
-        replyContext = await getReferencedMessage(conversation, reply.reference);
-        if (replyContext) {
-          console.log(`Original message being replied to: "${replyContext}"`);
-        }
-      } else if (isText) {
-        // Regular text message
-        messageContent = message.content as string;
-        console.log(
-          `Received message: ${messageContent} by ${message.senderInboxId}`,
-        );
-      } else if (isRemoteAttachment) {
-        // Remote static attachment: download, decrypt, build data URL
-        const remote = message.content as RemoteAttachment;
-        const decrypted = (await RemoteAttachmentCodec.load(
-          remote,
-          client,
-        )) as { filename?: string; mimeType?: string; data: Uint8Array };
-
-        // Optional integrity check against contentDigest
-        if ((remote as any).contentDigest) {
-          const digest = createHash("sha256")
-            .update(Buffer.from(decrypted.data))
-            .digest("hex");
-          if (digest !== (remote as any).contentDigest) {
-            console.warn("Attachment digest mismatch; proceeding but marking");
-          }
-        }
-
-        const mime = decrypted.mimeType || "application/octet-stream";
-        const dataUrl = `data:${mime};base64,${Buffer.from(
-          decrypted.data,
-        ).toString("base64")}`;
-
-        imageMeta = {
-          image_data_url: dataUrl,
-          filename: decrypted.filename,
-          mime_type: decrypted.mimeType,
-          content_digest: (remote as any).contentDigest,
-        };
-
-        // For image attachments, always start with default text
-        // We'll wait for a real text message to pair with this image
-        messageContent = "Describe the image";
-        console.log(`Debug: Image processing - using default text, will wait for user text message to pair`);
-      }
-
-      try {
-        /* Send a 👀 reaction to indicate message received and processing */
-        console.log("Sending 👀 reaction to indicate message received...");
-        
-        // Send proper XMTP reaction using the official content type
-        const reaction: Reaction = {
-          reference: message.id,
-          action: "added" as const,
-          content: "👀",
-          schema: "unicode" as const,
-        };
-        
-        await conversation.send(reaction, ContentTypeReaction);
-        console.log("👀 reaction sent successfully");
-
-        // Simple approach: check if we processed something very recently to avoid duplicates
-        const convId = message.conversationId;
-        const lastProcessed = lastProcessedByConversation.get(convId) || 0;
-        const timeSinceLastProcessed = Date.now() - lastProcessed;
-        
-        if (timeSinceLastProcessed < 2000) {
-          console.log(`Skipping message due to recent processing (${timeSinceLastProcessed}ms ago)`);
-          continue;
-        }
-
-        // Check for pending aggregation before processing text messages
-        const existing = pendingByConversation.get(convId);
-        
-        // Debug log for pairing conditions
-        console.log(`Debug: convId=${convId}, existing=${!!existing}, imageMeta=${!!existing?.imageMeta}, hasUserText=${existing?.hasUserText}, isText=${isText}, isReply=${isReply}`);
-        
-        // For text-only messages, check if there's a pending image to pair with
-        if (isReply || isText) {
-          // Check if there's a valid pending image to pair with (within time window)
-          let shouldPair = false;
-          if (existing && existing.imageMeta && !existing.hasUserText) {
-            // Check if the pending image is recent enough for pairing (within 3 seconds)
-            const now = Date.now();
-            const pendingAge = now - (existing.imageTimestamp || 0);
-            shouldPair = pendingAge <= PAIRING_WINDOW_MS;
-            console.log(`Debug: Pending image age=${pendingAge}ms, shouldPair=${shouldPair} (window: ${PAIRING_WINDOW_MS}ms)`);
-            
-            // If the pending image is too old, clean it up
-            if (!shouldPair) {
-              console.log(`Cleaning up stale pending image (age: ${pendingAge}ms)`);
-              if (existing.timer) clearTimeout(existing.timer);
-              pendingByConversation.delete(convId);
-            }
-          }
-          
-          if (shouldPair) {
-            // We have a recent pending image, update it with user text and flush
-            console.log(`Pairing text with pending image for aggregation`);
-            existing!.text = messageContent;
-            existing!.replyContext = replyContext;
-            existing!.hasUserText = true;
-            if (existing!.timer) clearTimeout(existing!.timer);
-            
-            // Flush immediately with small delay since both parts are now present
-            existing!.timer = setTimeout(() => {
-              flushPending(client, convId).catch((e) =>
-                console.error("flushPending failed", e),
-              );
-            }, IMMEDIATE_FLUSH_MS);
-          } else {
-            // No recent pending image to pair with
-            // Create a pending text entry in case an image arrives soon
-            console.log(`Creating pending text entry for pure text message: "${messageContent}"`);
-            const pending: PendingTurn = {
-              senderInboxId: message.senderInboxId,
-              text: messageContent,
-              imageMeta: null,
-              replyContext: replyContext,
-              timer: null,
-              hasUserText: true,
-              textTimestamp: Date.now(),
-            };
-            
-            pendingByConversation.set(convId, pending);
-            
-            // Set a short timer to process text if no image arrives
-            pending.timer = setTimeout(() => {
-              // Check if we still have the same pending item (no image paired)
-              const currentPending = pendingByConversation.get(convId);
-              if (currentPending === pending && !currentPending.imageMeta) {
-                console.log(`Text timeout - processing text-only message`);
-                // Use flushPending instead of duplicate inline fetch logic
-                flushPending(client, convId).catch((e) =>
-                  console.error("flushPending failed for text-only message", e),
-                );
-              }
-            }, DEBOUNCE_MS);
-          }
-        } else if (isRemoteAttachment) {
-          // For attachments, check if there's recent pending text to pair with
-          console.log(`Processing attachment, checking for pending text`);
-          
-          if (existing && existing.hasUserText && !existing.imageMeta) {
-            // We have pending text, check if it's recent enough
-            const now = Date.now();
-            const textAge = now - (existing.textTimestamp || 0);
-            if (textAge <= PAIRING_WINDOW_MS) {
-              console.log(`Pairing image with pending text (age: ${textAge}ms)`);
-              existing.imageMeta = imageMeta;
-              existing.imageTimestamp = now;
-              if (existing.timer) clearTimeout(existing.timer);
-              
-              // Process immediately since both parts are present
-              existing.timer = setTimeout(() => {
-                flushPending(client, convId).catch((e) =>
-                  console.error("flushPending failed", e),
-                );
-              }, IMMEDIATE_FLUSH_MS);
-              return; // Early return, don't continue with normal image processing
-            } else {
-              console.log(`Cleaning up stale pending text (age: ${textAge}ms)`);
-              if (existing.timer) clearTimeout(existing.timer);
-              pendingByConversation.delete(convId);
-            }
-          }
-          
-          // Normal image processing (no recent text to pair with)
-          const pending: PendingTurn = {
-            senderInboxId: message.senderInboxId,
-            text: "Describe the image",
-            imageMeta: imageMeta,
-            replyContext: null,
-            timer: null,
-            hasUserText: false,
-            imageTimestamp: Date.now(),
-          };
-
-          console.log(`Debug: Image processing - text="${pending.text}", hasUserText=${pending.hasUserText}, timestamp=${pending.imageTimestamp}`);
-          pendingByConversation.set(convId, pending);
-
-          pending.timer = setTimeout(() => {
-            flushPending(client, convId).catch((e) =>
-              console.error("flushPending failed", e),
-            );
-          }, DEBOUNCE_MS);
-        }
-      } catch (error) {
-        console.error("Error getting agent response:", error);
-        await conversation.send(
-          "Sorry, I encountered an error processing your message.",
-        );
-      }
-    }
-  };
-
-  // Start the message stream with error recovery
-  while (true) {
-    try {
-      console.log("Starting message stream...");
-      await messageStream();
-      console.warn("Message stream ended unexpectedly, restarting in 5 seconds...");
-      await sleep(5000);
-    } catch (error) {
-      console.error("Message stream error:", error);
-      console.log("Restarting message stream in 10 seconds...");
-      await sleep(10000);
-    }
-  }
+  console.log("\n🚀 Bot configuration:");
+  console.log(`  - Agent endpoint: ${agentEndpoint}`);
+  console.log(`  - Debug mode: ${DEBUG_MODE}`);
+  console.log(`  - Mention aliases: ${BOT_MENTION_ALIASES || '(none)'}`);
+  console.log("\n");
+  
+  // 开始处理消息
+  await processMessages(client);
 }
 
-main().catch(console.error);
+// 错误处理
+main().catch(error => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
