@@ -375,44 +375,21 @@ async function processMessages(client: Client<any>) {
     const conversation = await client.conversations.getConversationById(message.conversationId);
     if (!conversation) continue;
     
-    // 在 XMTP SDK v4 中，所有对话都是 Group 类型
-    // 尝试通过成员数量来判断是否为 DM（两人对话）
+    // Use the official metadata approach to determine conversation type
     let isDm = false;
-    let isGroup = conversation instanceof Group;
+    let isGroup = false;
     
-    // 尝试获取成员数量来判断是否为 DM
     try {
-      // @ts-ignore - 尝试不同的属性访问方式
-      const members = conversation.members || 
-                     conversation.membersList || 
-                     (conversation.getMembers && await conversation.getMembers()) ||
-                     (conversation.listMembers && await conversation.listMembers());
-      
-      if (members) {
-        const memberCount = Array.isArray(members) ? members.length : members.size || 0;
-        if (memberCount === 2) {
-          isDm = true;
-          isGroup = false; // 两人对话视为 DM，不是群组
-          console.log(`  ℹ️ Detected as DM (2 members)`);
-        } else if (memberCount > 2) {
-          console.log(`  ℹ️ Detected as Group (${memberCount} members)`);
-        }
-      }
+      const meta = await conversation.metadata();
+      isDm = meta.conversationType === 'dm';
+      isGroup = meta.conversationType === 'group';
+      console.log(`  ℹ️ Detected as ${meta.conversationType.toUpperCase()}`);
     } catch (error) {
-      // 如果无法获取成员信息，基于其他因素判断
-      // 例如：检查对话 ID 或名称模式
-      try {
-        // @ts-ignore
-        const conversationName = conversation.name || conversation.groupName || '';
-        if (!conversationName && isGroup) {
-          // 没有群名的 Group 可能是 DM
-          isDm = true;
-          isGroup = false;
-          console.log(`  ℹ️ Detected as DM (no group name)`);
-        }
-      } catch {
-        console.log(`  ⚠️ Could not determine conversation type, treating as: ${isGroup ? 'Group' : 'Unknown'}`);
-      }
+      // If metadata is not available, fall back to instanceof check
+      console.log(`  ⚠️ Could not determine conversation type from metadata, falling back to type check`);
+      isGroup = conversation instanceof Group;
+      isDm = !isGroup;
+      console.log(`  ℹ️ Type check result: ${isGroup ? 'Group' : 'DM'}`);
     }
     // Check for text messages - handle case where contentType might be undefined for plain text
     const isText = !message.contentType || message.contentType?.typeId === "text";
