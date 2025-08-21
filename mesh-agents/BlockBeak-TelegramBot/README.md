@@ -275,6 +275,47 @@ Ask **"Why did PEPE pump today?"** and get comprehensive analysis combining pric
 - **Tool Composability**: Mix & match agents to cover any crypto research need
 - **Prompt-Driven Customization**: Change behavior via prompts, not code refactors
 
+## 🧠 Session Memory System
+
+BlockBeak features a sophisticated session memory system that persists conversation history locally using SQLite. This enables context-aware conversations across multiple interfaces.
+
+### Database Schema
+
+```sql
+CREATE TABLE sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,           -- e.g., "telegram_user_123456"
+    role TEXT NOT NULL,                 -- "user" or "assistant"
+    content TEXT NOT NULL,              -- JSON-serialized message content
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    metadata TEXT,                      -- Additional JSON metadata
+    hash TEXT,                          -- SHA256 hash for deduplication
+    compressed BOOLEAN DEFAULT 0,       -- Future compression support
+    UNIQUE(session_id, hash)           -- Prevents duplicate messages
+)
+```
+
+### Key Features
+
+**Multi-Interface Session IDs:**
+- Telegram users: `telegram_user_123456`
+- Telegram groups: `telegram_group_-4749120682_user_7655347814` 
+- XMTP conversations: `xmtp_conversation_239b964605baa7fb8b1e281c37553ed2`
+
+**Smart Memory Management:**
+- **Windowing**: Returns last 20 items by default (configurable)
+- **Deduplication**: SHA256 hashing prevents duplicate storage
+- **Empty filtering**: Skips empty messages to maintain conversation quality
+- **Invisible nonces**: Adds timestamp markers (`\u200B{timestamp}`) to prevent AI caching issues
+
+**Persistence & Cleanup:**
+- Async SQLite operations with proper indexing
+- Background cleanup task runs hourly 
+- TTL-based expiration (7 days default)
+- Manual session clearing capabilities
+
+**Note**: Compression feature is planned (schema ready) but not yet implemented.
+
 ## 🔧 Configuration
 
 ## 🔄 Try It Yourself

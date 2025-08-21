@@ -335,9 +335,25 @@ async function sendToAgent(conversation: any, sender: string, text: string, imag
   }
 }
 
+// 清理过期的等待配对的消息
+function cleanupExpiredMessages() {
+  const now = Date.now();
+  const EXPIRY_TIME = 60000; // 60秒后过期
+  
+  for (const [key, value] of recentMessages.entries()) {
+    if (now - value.timestamp > EXPIRY_TIME) {
+      console.log(`  🧹 Cleaning up expired message for key: ${key}`);
+      recentMessages.delete(key);
+    }
+  }
+}
+
 // 主消息处理循环 - 简化版本
 async function processMessages(client: Client<any>) {
   console.log("Waiting for messages...");
+  
+  // 定期清理过期消息
+  setInterval(cleanupExpiredMessages, 30000); // 每30秒清理一次
   
   const stream = client.conversations.streamAllMessages();
   
@@ -359,7 +375,45 @@ async function processMessages(client: Client<any>) {
     const conversation = await client.conversations.getConversationById(message.conversationId);
     if (!conversation) continue;
     
-    const isGroup = conversation instanceof Group;
+    // 在 XMTP SDK v4 中，所有对话都是 Group 类型
+    // 尝试通过成员数量来判断是否为 DM（两人对话）
+    let isDm = false;
+    let isGroup = conversation instanceof Group;
+    
+    // 尝试获取成员数量来判断是否为 DM
+    try {
+      // @ts-ignore - 尝试不同的属性访问方式
+      const members = conversation.members || 
+                     conversation.membersList || 
+                     (conversation.getMembers && await conversation.getMembers()) ||
+                     (conversation.listMembers && await conversation.listMembers());
+      
+      if (members) {
+        const memberCount = Array.isArray(members) ? members.length : members.size || 0;
+        if (memberCount === 2) {
+          isDm = true;
+          isGroup = false; // 两人对话视为 DM，不是群组
+          console.log(`  ℹ️ Detected as DM (2 members)`);
+        } else if (memberCount > 2) {
+          console.log(`  ℹ️ Detected as Group (${memberCount} members)`);
+        }
+      }
+    } catch (error) {
+      // 如果无法获取成员信息，基于其他因素判断
+      // 例如：检查对话 ID 或名称模式
+      try {
+        // @ts-ignore
+        const conversationName = conversation.name || conversation.groupName || '';
+        if (!conversationName && isGroup) {
+          // 没有群名的 Group 可能是 DM
+          isDm = true;
+          isGroup = false;
+          console.log(`  ℹ️ Detected as DM (no group name)`);
+        }
+      } catch {
+        console.log(`  ⚠️ Could not determine conversation type, treating as: ${isGroup ? 'Group' : 'Unknown'}`);
+      }
+    }
     // Check for text messages - handle case where contentType might be undefined for plain text
     const isText = !message.contentType || message.contentType?.typeId === "text";
     const isReply = message.contentType?.sameAs(ContentTypeReply);
@@ -372,7 +426,7 @@ async function processMessages(client: Client<any>) {
       continue;
     }
     
-    console.log(`  Type: ${isText ? 'TEXT' : isReply ? 'REPLY' : isImage ? 'IMAGE' : 'UNKNOWN'}, Group: ${isGroup}`);
+    console.log(`  Type: ${isText ? 'TEXT' : isReply ? 'REPLY' : isImage ? 'IMAGE' : 'UNKNOWN'}, ${isDm ? 'DM' : isGroup ? 'Group' : 'Unknown'}`);
     
     // 提取发送者地址
     const senderAddress = message.senderInboxId.slice(0, 6) + "..." + message.senderInboxId.slice(-4);
@@ -414,28 +468,38 @@ async function processMessages(client: Client<any>) {
       
       const key = `${message.conversationId}:${message.senderInboxId}`;
       
-      // 在群组中，需要配对文本
-      if (isGroup) {
-        console.log(`  🖼️ Image in group, storing and waiting for text...`);
-        
-        // 保存图片，等待文本
-        recentMessages.set(key, { imageData, timestamp: Date.now() });
-        
-        // 给文本一个机会到达
-        await sleep(1500); // 等待1.5秒
-        
-        // 检查是否有文本到达
-        const current = recentMessages.get(key);
-        if (current && current.text && current.imageData === imageData) {
-          // 文本已经到达并处理了图片，什么都不用做
-          console.log(`  ✅ Text already processed this image`);
-        } else if (current && current.imageData === imageData) {
-          // 还是只有图片，没有文本
+      // 在群组或 DM 中，都尝试配对文本和图片
+      // 因为用户可能同时发送文字和图片
+      console.log(`  🖼️ Image received in ${isDm ? 'DM' : 'group'}, storing and waiting for text...`);
+      
+      // 保存图片，等待文本
+      recentMessages.set(key, { imageData, timestamp: Date.now() });
+      
+      // 给文本一个机会到达
+      await sleep(2000); // 等待2秒，给 DM 更多时间
+      
+      // 检查是否有文本到达
+      const current = recentMessages.get(key);
+      if (current && current.text && current.imageData === imageData) {
+        // 文本已经到达并处理了图片，什么都不用做
+        console.log(`  ✅ Text already processed this image`);
+      } else if (current && current.imageData === imageData) {
+        // 还是只有图片
+        if (isDm) {
+          // DM 中等待更长时间，如果还是没有文本，使用默认描述
+          console.log(`  ⏱️ No text arrived in DM, waiting a bit more...`);
+          await sleep(1500); // 额外等待1.5秒
+          
+          const finalCheck = recentMessages.get(key);
+          if (finalCheck && !finalCheck.text && finalCheck.imageData === imageData) {
+            console.log(`  📤 Processing image with default text in DM`);
+            recentMessages.delete(key);
+            await sendToAgent(conversation, senderAddress, "分析这张图", imageData, undefined, message.id);
+          }
+        } else {
+          // 群组中保持图片在队列中
           console.log(`  ⏱️ No text arrived, keeping image in queue for later`);
         }
-      } else {
-        // 私聊中直接处理图片
-        await sendToAgent(conversation, senderAddress, "Describe this image", imageData, undefined, message.id);
       }
     }
   }

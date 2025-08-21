@@ -32,7 +32,7 @@ class TelegramBotHandler:
         
         # Initialize session manager
         self.session_manager = get_session_manager()
-        asyncio.create_task(self.session_manager.start_cleanup_task())
+        # Note: cleanup task will be started when bot runs (in run method)
         
         # Keep minimal state for backward compatibility
         # Track conversation threads: message_id -> conversation_context
@@ -325,6 +325,28 @@ class TelegramBotHandler:
     
     def run(self):
         """Run the Telegram bot."""
+        # Start the cleanup task in a separate thread with its own event loop
+        import threading
+        
+        def run_cleanup_task():
+            """Run cleanup task in a separate thread with its own event loop"""
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.session_manager.start_cleanup_task())
+                # Keep the loop running for the cleanup task
+                loop.run_forever()
+            except Exception as e:
+                logger.error(f"Error in cleanup task thread: {e}")
+            finally:
+                loop.close()
+        
+        # Start cleanup task in background thread
+        cleanup_thread = threading.Thread(target=run_cleanup_task, daemon=True)
+        cleanup_thread.start()
+        logger.info("Started session cleanup task in background thread")
+        
+        # Run the bot with its own event loop
         try:
             loop = asyncio.get_event_loop()
             if loop.is_closed():
