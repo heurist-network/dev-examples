@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import asyncio
+import copy
 import random
 import logging
 import re
@@ -315,8 +316,11 @@ class AgentManager:
             chat_id: Optional Telegram chat ID for per-chat debug decisions
             session: Optional CustomSession for conversation history management
         """
+        # Create deep copy of context for thread-safe isolation
+        # This prevents concurrent requests from interfering with each other
+        base_context = copy.deepcopy(self.context)
         if context_update:
-            self.context.update(context_update)
+            base_context.update(context_update)
 
         self.trace_id = gen_trace_id()
         logger.debug(f"Generated trace ID: {self.trace_id}")
@@ -380,8 +384,8 @@ class AgentManager:
                     input_payload: Any
                     image_url = None
                     logger.debug(f"Processing message: {message}")
-                    if isinstance(self.context, dict):
-                        image_url = self.context.get("image_data_url")
+                    if isinstance(base_context, dict):
+                        image_url = base_context.get("image_data_url")
                         logger.debug(f"Image URL from context: {bool(image_url)}")
 
                     if image_url:
@@ -408,7 +412,7 @@ class AgentManager:
                             Runner.run,
                             starting_agent=agent,
                             input=input_payload,  # Preserve multimodal input when available
-                            context=self.context,
+                            context=base_context,
                             max_turns=max_turns,
                             session=session  # Pass session to Runner
                         )
@@ -418,11 +422,11 @@ class AgentManager:
                             Runner.run,
                             starting_agent=agent,
                             input=input_payload,
-                            context=self.context,
+                            context=base_context,
                             max_turns=max_turns,
                         )
 
-                    # Update context with any new values from result
+                    # Update shared context with any new values from result
                     if hasattr(result, "context") and result.context:
                         self.context.update(result.context)
 

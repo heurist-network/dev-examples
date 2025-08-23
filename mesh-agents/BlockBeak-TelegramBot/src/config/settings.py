@@ -115,6 +115,7 @@ class Settings:
 
         self.agent_instructions = self._load_agent_instructions()
         
+        
         # Session settings
         self.session_config = self._load_session_config()
 

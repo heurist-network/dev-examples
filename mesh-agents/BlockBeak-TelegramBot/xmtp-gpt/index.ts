@@ -16,15 +16,16 @@ import {
   ContentTypeReply,
   type Reply,
 } from "@xmtp/content-type-reply";
+import { ContentTypeText } from "@xmtp/content-type-text";
 import {
   AttachmentCodec,
   RemoteAttachmentCodec,
   ContentTypeRemoteAttachment,
   type RemoteAttachment,
 } from "@xmtp/content-type-remote-attachment";
-import { createHash } from "node:crypto";
+import { Semaphore } from "./concurrency.js";
 
-// Load environment variables - 一次性加载，不要重复读文件
+// Load environment variables
 const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
   validateEnvironment([
     "WALLET_KEY",
@@ -33,7 +34,6 @@ const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
     "AGENT_ENDPOINT",
   ]);
 
-// 可选的别名配置 - 使用 validateEnvironment 以确保从 .env 加载
 const optionalEnv = (() => {
   try {
     return validateEnvironment(["BOT_MENTION_ALIASES"]);
@@ -45,6 +45,35 @@ const BOT_MENTION_ALIASES = optionalEnv.BOT_MENTION_ALIASES || process.env.BOT_M
 
 const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8000/inbox";
 const DEBUG_MODE = process.env.DEBUG_MODE?.toLowerCase() === 'true';
+
+// Per-conversation chaining configuration (Option 2)
+const MAX_CONCURRENCY = Math.max(1, Number(process.env.AGENT_CONCURRENCY || 8));
+const AGENT_REQUEST_TIMEOUT = Number(process.env.AGENT_REQUEST_TIMEOUT || 180000);
+
+// Per-conversation task chains
+const convoTails = new Map<string, Promise<void>>();
+
+const globalSemaphore = new Semaphore(MAX_CONCURRENCY);
+
+/**
+ * Enqueue a task for a specific conversation, ensuring serialization per conversation
+ * @param convoId The conversation ID
+ * @param task The async task to execute
+ */
+function enqueueByConversation(convoId: string, task: () => Promise<void>) {
+  const prev = convoTails.get(convoId) || Promise.resolve();
+  const next = prev
+    .then(task)
+    .catch(err => console.error(`❌ Error in conversation ${convoId}:`, err))
+    .finally(() => {
+      // Clean up the tail if it's still the current one
+      if (convoTails.get(convoId) === next) {
+        convoTails.delete(convoId);
+      }
+    });
+  convoTails.set(convoId, next);
+  console.log(`📥 Enqueued task for conversation ${convoId.slice(0, 8)}... (${convoTails.size} active conversations)`);
+}
 
 // 简单的睡眠函数
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -58,12 +87,12 @@ function initializeMentions(client: any) {
   
   const with0x = address.startsWith("0x") ? address : `0x${address}`;
   
-  // 添加地址的各种格式
+  // add all address formats
   botMentionPatterns.add(`@${with0x}`);
   botMentionPatterns.add(`@${with0x.slice(0, 6)}…${with0x.slice(-4)}`);
   botMentionPatterns.add(`@${with0x.slice(0, 6)}...${with0x.slice(-4)}`);
   
-  // 添加别名
+  // add aliases
   const aliases = (process.env.BOT_MENTION_ALIASES || BOT_MENTION_ALIASES || "")
     .split(/[,\s]+/)
     .filter(Boolean)
@@ -74,23 +103,18 @@ function initializeMentions(client: any) {
   console.log("Bot will respond to:", Array.from(botMentionPatterns));
 }
 
-// 简化的mention检测 - 一行搞定
 function isMentioned(text: string): boolean {
   const lowerText = text.toLowerCase();
   return Array.from(botMentionPatterns).some(pattern => lowerText.includes(pattern));
 }
 
-// 清理文本中的bot mention，只保留实际内容
 function cleanBotMention(text: string): string {
   let cleanedText = text;
   
-  // 移除所有bot mention模式
   for (const pattern of botMentionPatterns) {
-    // 移除@开头的mention
     const regex = new RegExp(`@${pattern.replace('@', '')}\\s*`, 'gi');
     cleanedText = cleanedText.replace(regex, '');
     
-    // 也移除不带@的地址格式
     const addressPattern = pattern.replace('@', '');
     if (addressPattern.includes('…') || addressPattern.includes('...')) {
       const shortPattern = addressPattern.replace(/[….]/g, '');
@@ -99,14 +123,12 @@ function cleanBotMention(text: string): string {
     }
   }
   
-  // 清理多余的空白字符
   cleanedText = cleanedText.trim();
   
   console.log(`  🧹 Cleaned text: "${text}" -> "${cleanedText}"`);
   return cleanedText;
 }
 
-// 获取被回复的消息
 async function getReplyContext(conversation: any, messageId: string): Promise<string | null> {
   try {
     const messages = await conversation.messages();
@@ -117,7 +139,6 @@ async function getReplyContext(conversation: any, messageId: string): Promise<st
   }
 }
 
-// 加载远程图片
 async function loadRemoteImage(attachment: RemoteAttachment, client: any) {
   try {
     console.log(`  🔍 Loading remote image: filename=${(attachment as any).filename}, size=${(attachment as any).contentLength || 'unknown'}`);
@@ -126,31 +147,26 @@ async function loadRemoteImage(attachment: RemoteAttachment, client: any) {
     
     console.log(`  📊 Decrypted: mimeType=${decrypted.mimeType}, dataSize=${decrypted.data?.length || 'unknown'}`);
     
-    // 验证解密后的数据
     if (!decrypted.data || decrypted.data.length === 0) {
       console.error("  ❌ Decrypted data is empty");
       return null;
     }
     
-    // 检查数据大小是否合理（超过5MB的图片可能有问题）
     const dataSizeMB = decrypted.data.length / 1024 / 1024;
     if (dataSizeMB > 5) {
       console.warn(`  ⚠️ Image data is very large: ${dataSizeMB.toFixed(2)} MB`);
       
-      // 如果图片太大，尝试压缩或拒绝
       if (dataSizeMB > 10) {
         console.error("  ❌ Image too large (>10MB), rejecting");
         return null;
       }
     }
     
-    // 验证MIME类型
     const mime = decrypted.mimeType || "application/octet-stream";
     if (!mime.startsWith("image/")) {
       console.warn(`  ⚠️ Unexpected MIME type: ${mime}`);
     }
     
-    // 转换为base64
     const base64Data = Buffer.from(decrypted.data).toString("base64");
     console.log(`  🔄 Base64 conversion: ${base64Data.length} chars`);
     
@@ -169,82 +185,39 @@ async function loadRemoteImage(attachment: RemoteAttachment, client: any) {
   }
 }
 
-// 消息配对机制 - 支持文本和图片的双向等待
+// match image and text
 const recentMessages = new Map<string, { text?: string; imageData?: any; timestamp: number }>();
 
-// 清理过期消息
+// clean expired messages
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of recentMessages.entries()) {
-    if (now - value.timestamp > 5000) { // 5秒后过期
+    if (now - value.timestamp > 5000) { // 5 seconds later
       recentMessages.delete(key);
     }
   }
-}, 10000); // 每10秒清理一次
+}, 10000); // 10 seconds later
 
 
 
-// 发送消息到Agent
-async function sendToAgent(conversation: any, sender: string, text: string, imageData?: any, replyContext?: string, messageId?: string) {
-  console.log(`\n🤖 Sending to agent:`);
+// send message to openai agent to process
+// All message sending (reactions, waiting messages, replies) happens in the per-conversation task
+async function sendToAgent(sender: string, text: string, imageData?: any, replyContext?: string, messageId?: string, conversationId?: string) {
+  console.log(`\n🤖 Calling agent:`);
   console.log(`  - Text: "${text.slice(0, 100)}..."`);
   console.log(`  - Has image: ${!!imageData}`);
   console.log(`  - Has reply context: ${!!replyContext}`);
   
   try {
-    // Phase 1: Detect mode first
-    console.log(`  🔍 Phase 1: Detecting agent mode...`);
-    const detectModeEndpoint = agentEndpoint.replace('/inbox', '/detect-mode');
     
-    try {
-      const modeResponse = await fetch(detectModeEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
-        signal: AbortSignal.timeout(10000) // 10 second timeout for mode detection
-      });
-      
-      if (modeResponse.ok) {
-        const modeData = await modeResponse.json();
-        const detectedMode = modeData.mode;
-        console.log(`  ✅ Mode detected: ${detectedMode}`);
-        
-        // If deep mode, send waiting message
-        if (detectedMode === "deep") {
-          console.log(`  🧠 Deep mode activated, sending waiting message...`);
-          await conversation.send("🧠 Deep analysis mode activated. Conducting comprehensive research...");
-        }
-      } else {
-        console.warn(`  ⚠️ Mode detection failed: ${modeResponse.status}, continuing with normal flow`);
-      }
-    } catch (modeError) {
-      console.warn(`  ⚠️ Mode detection error:`, modeError, `continuing with normal flow`);
-    }
-
-    // 发送反应表情（如果有消息ID）
-    if (messageId) {
-      try {
-        const reaction: Reaction = {
-          reference: messageId,
-          action: "added",
-          content: "👀",
-          schema: "unicode"
-        };
-        await conversation.send(reaction, ContentTypeReaction);
-        console.log(`  ✅ Sent reaction to message ${messageId.slice(0, 8)}...`);
-      } catch (reactionError) {
-        console.warn(`  ⚠️ Failed to send reaction:`, reactionError);
-        // 继续处理，即使反应失败
-      }
-    }
-    
-    // Phase 2: Process message with agent
-    console.log(`  📤 Phase 2: Processing message with agent...`);
+    // Process message with agent
+    console.log(`  📤 Processing message with agent...`);
     
     const payload: any = {
-      conversationId: conversation.id,
+      conversationId: conversationId,
       sender,
       message: text,
+      id: messageId,  // Include message ID for server-side deduplication
     };
     
     if (replyContext) {
@@ -254,7 +227,7 @@ async function sendToAgent(conversation: any, sender: string, text: string, imag
     if (imageData) {
       payload.meta = imageData;
       
-      // 检查图片数据大小
+      // check image data size
       const imageSizeKB = (JSON.stringify(imageData).length / 1024);
       console.log(`  - Image data size: ${imageSizeKB.toFixed(1)} KB`);
       
@@ -267,7 +240,7 @@ async function sendToAgent(conversation: any, sender: string, text: string, imag
     const totalSizeKB = requestBody.length / 1024;
     console.log(`  - Total request size: ${totalSizeKB.toFixed(1)} KB`);
     
-    // 如果请求太大，给出警告
+    // if request is too large, give warning
     if (totalSizeKB > 10000) { // 10MB
       console.error(`  ❌ Request too large (${totalSizeKB.toFixed(1)} KB), this will likely fail`);
       throw new Error(`Request too large: ${totalSizeKB.toFixed(1)} KB`);
@@ -275,23 +248,11 @@ async function sendToAgent(conversation: any, sender: string, text: string, imag
     
     console.log(`  📤 Sending request to ${agentEndpoint}...`);
     
-    // 先测试后端连接
-    try {
-      console.log(`  🔍 Testing backend connection...`);
-      const testResponse = await fetch(`${agentEndpoint.replace('/inbox', '')}/health`, { 
-        method: 'GET',
-        signal: AbortSignal.timeout(5000) // 5秒测试
-      });
-      console.log(`  ✅ Backend health check: ${testResponse.status}`);
-    } catch (e) {
-      console.warn(`  ⚠️ Backend health check failed:`, e);
-    }
-    
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      console.log(`  ⏰ Request timeout after 60 seconds, aborting...`);
+      console.log(`  ⏰ Request timeout after ${AGENT_REQUEST_TIMEOUT / 1000} seconds, aborting...`);
       controller.abort();
-    }, 60000); // 60秒超时
+    }, AGENT_REQUEST_TIMEOUT); // Configurable timeout
     
     try {
       const response = await fetch(agentEndpoint, {
@@ -314,31 +275,40 @@ async function sendToAgent(conversation: any, sender: string, text: string, imag
       const data = await response.json();
       const responseText = data.response || String(data);
       console.log(`  ✅ Agent responded: "${responseText.slice(0, 100)}..."`);
-      await conversation.send(responseText);
+      
+      // Return the response and detected mode
+      return { responseText, detectedMode: null };
       
     } catch (error: any) {
       clearTimeout(timeoutId);
       
       if (error.name === 'AbortError') {
-        console.error(`  ❌ Request timed out after 60 seconds`);
-        await conversation.send("Sorry, the request timed out. Please try again with a smaller image.");
+        console.error(`  ❌ Request timed out after ${AGENT_REQUEST_TIMEOUT / 1000} seconds`);
+        return { 
+          responseText: `Sorry, the request timed out after ${AGENT_REQUEST_TIMEOUT / 1000} seconds. Please try again.`,
+          isError: true 
+        };
       } else {
         console.error(`  ❌ Network error:`, error);
-        await conversation.send("Sorry, I encountered a network error. Please try again.");
+        return { 
+          responseText: "Sorry, I encountered a network error. Please try again.",
+          isError: true 
+        };
       }
-      throw error; // 重新抛出错误以便上层处理
     }
     
   } catch (error) {
     console.error("  ❌ Agent error:", error);
-    await conversation.send("Sorry, I encountered an error processing your request.");
+    return { 
+      responseText: "Sorry, I encountered an error processing your request.",
+      isError: true 
+    };
   }
 }
 
-// 清理过期的等待配对的消息
 function cleanupExpiredMessages() {
   const now = Date.now();
-  const EXPIRY_TIME = 60000; // 60秒后过期
+  const EXPIRY_TIME = 60000; // 60 seconds later
   
   for (const [key, value] of recentMessages.entries()) {
     if (now - value.timestamp > EXPIRY_TIME) {
@@ -348,24 +318,30 @@ function cleanupExpiredMessages() {
   }
 }
 
-// 主消息处理循环 - 简化版本
+// main message processing loop
 async function processMessages(client: Client<any>) {
   console.log("Waiting for messages...");
+  console.log(`🚀 Per-conversation chaining initialized with max concurrency: ${MAX_CONCURRENCY}`);
   
-  // 定期清理过期消息
-  setInterval(cleanupExpiredMessages, 30000); // 每30秒清理一次
+  // clean expired messages
+  setInterval(cleanupExpiredMessages, 30000); // 30 seconds later
   
-  const stream = client.conversations.streamAllMessages();
+  // print status
+  setInterval(() => {
+    console.log(`📊 Active conversations: ${convoTails.size}`);
+  }, 30000);
   
-  for await (const message of await stream) {
-    // 忽略自己的消息
+  const stream = await client.conversations.streamAllMessages();
+  
+  for await (const message of stream) {
+    // ignore messages from the same agent
     if (message.senderInboxId.toLowerCase() === client.inboxId.toLowerCase()) {
       continue;
     }
     
     console.log(`\n📨 Incoming message from ${message.senderInboxId.slice(0,8)}...`);
     
-    // Skip system messages like read receipts, reactions, etc.
+    // skip system messages like read receipts, reactions, etc.
     const systemMessageTypes = ['readReceipt', 'reaction', 'groupUpdated', 'groupMembershipChange'];
     if (message.contentType?.typeId && systemMessageTypes.includes(message.contentType.typeId)) {
       console.log(`  ⏭️  Skipping system message: ${message.contentType.typeId}`);
@@ -405,15 +381,15 @@ async function processMessages(client: Client<any>) {
     
     console.log(`  Type: ${isText ? 'TEXT' : isReply ? 'REPLY' : isImage ? 'IMAGE' : 'UNKNOWN'}, ${isDm ? 'DM' : isGroup ? 'Group' : 'Unknown'}`);
     
-    // 提取发送者地址
-    const senderAddress = message.senderInboxId.slice(0, 6) + "..." + message.senderInboxId.slice(-4);
+    // full senderInboxId for attribution and rate limiting
+    const senderAddress = message.senderInboxId;
     
-    // 处理文本消息（包括回复）
+    // process text message (including reply)
     if (isText || isReply) {
       const text = isReply ? ((message.content as Reply).content as string) : (message.content as string);
       const replyContext = isReply ? await getReplyContext(conversation, (message.content as Reply).reference as string) : null;
       
-      // 群组需要检查mention
+      // group need to check mention
       if (isGroup && !isMentioned(text)) {
         console.log(`  ❌ Group message without mention: "${text.slice(0, 50)}..."`);
         continue;
@@ -421,60 +397,235 @@ async function processMessages(client: Client<any>) {
       
       console.log(`  ✅ Processing message: "${text.slice(0, 50)}..."`);
       
-      // 检查是否有等待配对的图片
+      // check if there is a waiting image
       const key = `${message.conversationId}:${message.senderInboxId}`;
       const recent = recentMessages.get(key);
       
+      // if there is a waiting image, process together
       if (recent && recent.imageData && !recent.text) {
-        // 找到了等待的图片，配对处理
         console.log(`  🎯 Found waiting image, processing together`);
         recentMessages.delete(key);
         const cleanedText = cleanBotMention(text);
-        await sendToAgent(conversation, senderAddress, cleanedText, recent.imageData, replyContext || undefined, message.id);
+        
+        // use per-conversation chaining to process message
+        enqueueByConversation(message.conversationId, async () => {
+          const release = await globalSemaphore.acquire();
+          try {
+            // Send reaction first, in-order
+            if (message.id) {
+              try {
+                const reaction: Reaction = {
+                  reference: message.id,
+                  action: "added",
+                  content: "👀",
+                  schema: "unicode"
+                };
+                await conversation.send(reaction, ContentTypeReaction);
+                console.log(`  ✅ Sent reaction to message ${message.id.slice(0, 8)}...`);
+              } catch (reactionError) {
+                console.warn(`  ⚠️ Failed to send reaction:`, reactionError);
+              }
+            }
+            
+            // Detect mode and send wait message if deep mode
+            let detectedMode = null;
+            try {
+              const detectModeEndpoint = agentEndpoint.replace('/inbox', '/detect-mode');
+              const modeResponse = await fetch(detectModeEndpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: cleanedText }),
+                signal: AbortSignal.timeout(10000)
+              });
+              
+              if (modeResponse.ok) {
+                const modeData = await modeResponse.json();
+                detectedMode = modeData.mode;
+                console.log(`  ✅ Mode detected: ${detectedMode}`);
+                
+                if (detectedMode === "deep" && message.id) {
+                  console.log(`  🧠 Deep mode activated, sending waiting message...`);
+                  const waitingMessage = "🧠 Deep analysis mode activated. Conducting comprehensive research...";
+                  const reply: Reply = {
+                    reference: message.id,
+                    contentType: ContentTypeText,
+                    content: waitingMessage,
+                  };
+                  await conversation.send(reply, ContentTypeReply);
+                }
+              }
+            } catch (modeError) {
+              console.warn(`  ⚠️ Mode detection error:`, modeError);
+            }
+            
+            // Call the agent
+            const result = await sendToAgent(senderAddress, cleanedText, recent.imageData, replyContext || undefined, message.id, message.conversationId);
+            
+            // Send final reply
+            if (message.id) {
+              const reply: Reply = {
+                reference: message.id,
+                contentType: ContentTypeText,
+                content: result.responseText,
+              };
+              await conversation.send(reply, ContentTypeReply);
+            } else {
+              await conversation.send(result.responseText);
+            }
+          } finally {
+            release();
+          }
+        });
       } else {
-        // 没有等待的图片，只处理文本
+        // process text message
         const cleanedText = cleanBotMention(text);
-        await sendToAgent(conversation, senderAddress, cleanedText, undefined, replyContext || undefined, message.id);
+        
+        // use per-conversation chaining to process message
+        enqueueByConversation(message.conversationId, async () => {
+          const release = await globalSemaphore.acquire();
+          try {
+            // Send reaction first, in-order
+            if (message.id) {
+              try {
+                const reaction: Reaction = {
+                  reference: message.id,
+                  action: "added",
+                  content: "👀",
+                  schema: "unicode"
+                };
+                await conversation.send(reaction, ContentTypeReaction);
+                console.log(`  ✅ Sent reaction to message ${message.id.slice(0, 8)}...`);
+              } catch (reactionError) {
+                console.warn(`  ⚠️ Failed to send reaction:`, reactionError);
+              }
+            }
+            
+            // Detect mode and send wait message if deep mode
+            let detectedMode = null;
+            try {
+              const detectModeEndpoint = agentEndpoint.replace('/inbox', '/detect-mode');
+              const modeResponse = await fetch(detectModeEndpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: cleanedText }),
+                signal: AbortSignal.timeout(10000)
+              });
+              
+              if (modeResponse.ok) {
+                const modeData = await modeResponse.json();
+                detectedMode = modeData.mode;
+                console.log(`  ✅ Mode detected: ${detectedMode}`);
+                
+                if (detectedMode === "deep" && message.id) {
+                  console.log(`  🧠 Deep mode activated, sending waiting message...`);
+                  const waitingMessage = "🧠 Deep analysis mode activated. Conducting comprehensive research...";
+                  const reply: Reply = {
+                    reference: message.id,
+                    contentType: ContentTypeText,
+                    content: waitingMessage,
+                  };
+                  await conversation.send(reply, ContentTypeReply);
+                }
+              }
+            } catch (modeError) {
+              console.warn(`  ⚠️ Mode detection error:`, modeError);
+            }
+            
+            // Call the agent
+            const result = await sendToAgent(senderAddress, cleanedText, undefined, replyContext || undefined, message.id, message.conversationId);
+            
+            // Send final reply
+            if (message.id) {
+              const reply: Reply = {
+                reference: message.id,
+                contentType: ContentTypeText,
+                content: result.responseText,
+              };
+              await conversation.send(reply, ContentTypeReply);
+            } else {
+              await conversation.send(result.responseText);
+            }
+          } finally {
+            release();
+          }
+        });
       }
     }
     
-    // 处理图片消息
+    //  process image message
     else if (isImage) {
       const imageData = await loadRemoteImage(message.content as RemoteAttachment, client);
       if (!imageData) continue;
       
       const key = `${message.conversationId}:${message.senderInboxId}`;
       
-      // 在群组或 DM 中，都尝试配对文本和图片
-      // 因为用户可能同时发送文字和图片
+      // in group or dm, try to pair text and image
+      // because user may send text and image together
       console.log(`  🖼️ Image received in ${isDm ? 'DM' : 'group'}, storing and waiting for text...`);
       
-      // 保存图片，等待文本
+      // save image, waiting for text
       recentMessages.set(key, { imageData, timestamp: Date.now() });
       
-      // 给文本一个机会到达
-      await sleep(2000); // 等待2秒，给 DM 更多时间
+      await sleep(2000); // wait 2 seconds, give dm more time
       
-      // 检查是否有文本到达
+      // check if there is text
       const current = recentMessages.get(key);
       if (current && current.text && current.imageData === imageData) {
-        // 文本已经到达并处理了图片，什么都不用做
+        // text already processed this image
         console.log(`  ✅ Text already processed this image`);
       } else if (current && current.imageData === imageData) {
-        // 还是只有图片
+        // still only image
         if (isDm) {
-          // DM 中等待更长时间，如果还是没有文本，使用默认描述
+          // wait longer in dm, if no text, use default description
           console.log(`  ⏱️ No text arrived in DM, waiting a bit more...`);
-          await sleep(1500); // 额外等待1.5秒
+          await sleep(1500); // wait 1.5 seconds
           
           const finalCheck = recentMessages.get(key);
           if (finalCheck && !finalCheck.text && finalCheck.imageData === imageData) {
             console.log(`  📤 Processing image with default text in DM`);
             recentMessages.delete(key);
-            await sendToAgent(conversation, senderAddress, "分析这张图", imageData, undefined, message.id);
+            
+            // use per-conversation chaining to process message
+            enqueueByConversation(message.conversationId, async () => {
+              const release = await globalSemaphore.acquire();
+              try {
+                // Send reaction first, in-order
+                if (message.id) {
+                  try {
+                    const reaction: Reaction = {
+                      reference: message.id,
+                      action: "added",
+                      content: "👀",
+                      schema: "unicode"
+                    };
+                    await conversation.send(reaction, ContentTypeReaction);
+                    console.log(`  ✅ Sent reaction to message ${message.id.slice(0, 8)}...`);
+                  } catch (reactionError) {
+                    console.warn(`  ⚠️ Failed to send reaction:`, reactionError);
+                  }
+                }
+                
+                // Call the agent
+                const result = await sendToAgent(senderAddress, "analyze this image", imageData, undefined, message.id, message.conversationId);
+                
+                // Send final reply
+                if (message.id) {
+                  const reply: Reply = {
+                    reference: message.id,
+                    contentType: ContentTypeText,
+                    content: result.responseText,
+                  };
+                  await conversation.send(reply, ContentTypeReply);
+                } else {
+                  await conversation.send(result.responseText);
+                }
+              } finally {
+                release();
+              }
+            });
           }
         } else {
-          // 群组中保持图片在队列中
+          // keep image in queue for later
           console.log(`  ⏱️ No text arrived, keeping image in queue for later`);
         }
       }
@@ -482,7 +633,28 @@ async function processMessages(client: Client<any>) {
   }
 }
 
-// 主函数 - 简化启动流程
+// graceful shutdown
+async function gracefulShutdown(signal: string) {
+  console.log(`\n⚠️ Received ${signal}, initiating graceful shutdown...`);
+  
+  // wait for all conversation chains to complete
+  if (convoTails.size > 0) {
+    console.log(`⏳ Waiting for ${convoTails.size} conversation chains to complete...`);
+    try {
+      await Promise.race([
+        Promise.all(Array.from(convoTails.values())),
+        new Promise(resolve => setTimeout(resolve, 15000)) // 15 second timeout
+      ]);
+    } catch (error) {
+      console.error("Error during shutdown:", error);
+    }
+  }
+  
+  console.log("👋 Shutdown complete");
+  process.exit(0);
+}
+
+// main function
 async function main() {
   const user = createUser(WALLET_KEY);
   const signer = createSigner(user.key);
@@ -498,8 +670,25 @@ async function main() {
     ],
   });
 
-  // 初始化mention模式
+  // initialize mention patterns
   initializeMentions(client);
+  
+  // test backend health at startup
+  try {
+    console.log(`🔍 Testing backend connection at startup...`);
+    const healthResponse = await fetch(`${agentEndpoint.replace('/inbox', '')}/health`, { 
+      method: 'GET',
+      signal: AbortSignal.timeout(5000)
+    });
+    console.log(`✅ Backend health check passed: ${healthResponse.status}`);
+  } catch (e) {
+    console.error(`❌ Backend health check failed at startup:`, e);
+    console.error(`Please ensure the backend is running at ${agentEndpoint}`);
+  }
+  
+  // shutdown handler
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
   await logAgentDetails(client as any);
   await client.conversations.sync();
@@ -508,13 +697,14 @@ async function main() {
   console.log(`  - Agent endpoint: ${agentEndpoint}`);
   console.log(`  - Debug mode: ${DEBUG_MODE}`);
   console.log(`  - Mention aliases: ${BOT_MENTION_ALIASES || '(none)'}`);
+  console.log(`  - Max concurrency: ${MAX_CONCURRENCY}`);
   console.log("\n");
   
-  // 开始处理消息
+  // start processing messages
   await processMessages(client);
 }
 
-// 错误处理
+// error handler
 main().catch(error => {
   console.error("Fatal error:", error);
   process.exit(1);
