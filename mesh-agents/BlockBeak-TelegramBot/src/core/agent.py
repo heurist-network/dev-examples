@@ -351,7 +351,7 @@ class AgentManager:
             else:   
                 model_settings = ModelSettings(
                     temperature=min(self.temperature * 1.5, 0.7),  # Higher temp for exploration
-                    max_tokens=min(self.max_tokens, 15000),
+                    max_tokens=min(self.max_tokens, 50000),
                 )
             agent_name = "DeepAnalyst"
         else:
