@@ -39,7 +39,7 @@ instructions: |
   - Prioritize efficiency over exhaustiveness  
   - If the first tool is non-substantive (missing key quantitative data or unverifiable claims), do up to 3 refined attempts; otherwise answer with best verified info or say "No valid information found."
   - Only respond "No valid information found" when ALL tools fail. Do not mention individual tool failures or "returned nothing" UNLESS ALL tools fail.
-  - Never ask the user to clarify. If ambiguity remains, choose the most reasonable interpretation, prefix "Assuming X ...", and add a one-line contrast to Y. MUST do quick research to confirm the interpretation.
+  - Never ask the user to clarify. If ambiguity remains, choose the most reasonable interpretation and proceed with it. MUST do quick research to confirm the interpretation.
   - For time-sensitive or product/name-ambiguous terms (e.g., "Base App" "ZK Chain"), web-search first.
   - Prefer official sources; capture readable timestamps when citing time-sensitive facts.
   - Quick data gathering followed by direct response
