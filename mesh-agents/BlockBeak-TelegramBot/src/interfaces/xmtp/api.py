@@ -71,7 +71,69 @@ def get_or_create_agent_manager(conversation_id: str):
     """Get or create an agent manager for a specific conversation."""
     if conversation_id not in conversation_agents:
         logger.info(f"Creating new agent manager for conversation: {conversation_id}")
-        conversation_agents[conversation_id] = create_agent_manager()
+        
+        # Create conversation-scoped tools for scheduled tasks
+        from src.tasks.tools import (
+            make_create_task_tool,
+            make_list_tasks_tool,
+            make_delete_task_tool,
+            make_run_task_now_tool,
+            make_toggle_task_tool,
+            make_set_default_timezone_tool,
+            make_get_default_timezone_tool,
+        )
+        
+        extra_tools = [
+            make_create_task_tool(conversation_id),
+            make_list_tasks_tool(conversation_id),
+            make_delete_task_tool(),
+            make_run_task_now_tool(),
+            make_toggle_task_tool(),
+            make_set_default_timezone_tool(conversation_id),
+            make_get_default_timezone_tool(conversation_id),
+        ]
+        
+        # Check if conversation has a default timezone
+        import asyncio
+        from src.tasks import store
+        
+        # Get default timezone synchronously (we'll handle async properly later)
+        default_tz = None
+        try:
+            loop = asyncio.get_event_loop()
+            default_tz = loop.run_until_complete(store.get_default_timezone(conversation_id))
+        except Exception as e:
+            logger.debug(f"Could not get default timezone: {e}")
+        
+        # Add scheduling hint to context
+        scheduling_context = {
+            "xmtp_conversation_id": conversation_id,
+            "scheduling_enabled": True,
+            "scheduling_hint": (
+                "When users ask to set up recurring updates or scheduled tasks "
+                "(e.g., 'Give me BTC price every day at 9pm'), help them create a scheduled task. "
+                "IMPORTANT: Always clarify the user's timezone before creating the task. "
+                "Ask them to specify their timezone using city names (e.g., 'New York', 'Los Angeles', 'London') "
+                "or standard timezone names (e.g., 'America/New_York', 'Europe/London'). "
+                "Avoid ambiguous abbreviations like 'CST' (could be US Central or China Standard). "
+                "If the user provides an ambiguous timezone, ask them to clarify by specifying the city. "
+                "You can also suggest they set a default timezone using set_default_timezone. "
+                "Common cron patterns: '0 21 * * *' = 9pm daily, '0 9 * * 1-5' = 9am weekdays, '*/30 * * * *' = every 30 minutes."
+            )
+        }
+        
+        # Add default timezone to context if available
+        if default_tz:
+            scheduling_context["default_timezone"] = default_tz
+            scheduling_context["scheduling_hint"] += (
+                f" Your default timezone is set to {default_tz}. "
+                "Confirm with the user if they want to use this timezone or specify a different one."
+            )
+        
+        conversation_agents[conversation_id] = create_agent_manager(
+            extra_tools=extra_tools,
+            context=scheduling_context
+        )
     return conversation_agents[conversation_id]
 
 
@@ -169,17 +231,13 @@ async def process_xmtp_message(message: XMTPMessage):
             # Clear any previous image data to ensure text-only turns don't retain old images
             context_update["image_data_url"] = None
         
-        # If an image is present, do not pass session to allow multimodal list input
-        # We'll persist this turn into our session storage manually afterwards.
-        session_for_call = None if has_image else session
-        
         # Process the message through the agent (XMTP client already handles ordering)
         logger.info(f"Processing message for conversation {message.conversationId}")
         result = await agent_manager.process_message(
             message=processed_message,
             streaming=False,
             context_update=context_update,
-            session=session_for_call
+            session=session  # Session is handled internally, not passed to Runner.run
         )
         
         logger.info(f"Agent response generated for conversation {message.conversationId}")
@@ -277,6 +335,14 @@ async def startup_event():
     """Application startup event."""
     logger.info("Starting BlockBeak XMTP Agent API")
     await session_manager.start_cleanup_task()
+    
+    # Start the task scheduler
+    from src.tasks.scheduler import get_task_scheduler
+    # Enable XMTP notifier if control server is configured
+    use_xmtp = bool(os.getenv("XMTP_CONTROL_URL"))
+    scheduler = get_task_scheduler(use_xmtp_notifier=use_xmtp)
+    await scheduler.start()
+    logger.info(f"Task scheduler started (XMTP notifier: {use_xmtp})")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -288,6 +354,12 @@ async def shutdown_event():
     recent_messages.clear()
     # Stop session cleanup task
     await session_manager.stop_cleanup_task()
+    
+    # Stop the task scheduler
+    from src.tasks.scheduler import get_task_scheduler
+    scheduler = get_task_scheduler()
+    await scheduler.shutdown()
+    logger.info("Task scheduler shut down")
 
 def run_api(host: str = "127.0.0.1", port: int = 8000, reload: bool = False):
     """Run the XMTP API server."""

@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}Tasks - Tasks WebUI{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-0">
+    <div class="sm:flex sm:items-center">
+        <div class="sm:flex-auto">
+            <h2 class="text-2xl font-bold text-gray-900">Tasks</h2>
+            <p class="mt-2 text-sm text-gray-700">
+                Showing {{ pagination.total_tasks }} task(s) across all conversations
+            </p>
+        </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="mt-4 bg-white shadow sm:rounded-lg">
+        <div class="px-4 py-5 sm:p-6">
+            <form method="get" action="/tasks" class="space-y-4 sm:space-y-0 sm:flex sm:items-center sm:space-x-4">
+                <!-- Search -->
+                <div class="flex-1">
+                    <label for="search" class="sr-only">Search</label>
+                    <input type="text" name="search" id="search" value="{{ filters.search or '' }}"
+                           class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                           placeholder="Search by name, prompt, or cron...">
+                </div>
+                
+                <!-- Conversation filter -->
+                <div>
+                    <label for="conversation_id" class="sr-only">Conversation</label>
+                    <select name="conversation_id" id="conversation_id"
+                            class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <option value="">All Conversations</option>
+                        {% for conv_id in conversation_ids %}
+                        <option value="{{ conv_id }}" {% if filters.conversation_id == conv_id %}selected{% endif %}>
+                            {{ conv_id[:20] }}...
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <!-- Enabled filter -->
+                <div>
+                    <label for="enabled" class="sr-only">Status</label>
+                    <select name="enabled" id="enabled"
+                            class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <option value="">All Status</option>
+                        <option value="true" {% if filters.enabled == True %}selected{% endif %}>Enabled</option>
+                        <option value="false" {% if filters.enabled == False %}selected{% endif %}>Disabled</option>
+                    </select>
+                </div>
+                
+                <!-- Submit -->
+                <button type="submit"
+                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Filter
+                </button>
+                
+                <!-- Clear -->
+                <a href="/tasks"
+                   class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Clear
+                </a>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Tasks Table -->
+    <div class="mt-8 flex flex-col">
+        <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+            <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+                <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                    <table class="min-w-full divide-y divide-gray-300">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Name</th>
+                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Prompt</th>
+                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Schedule</th>
+                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Last Run</th>
+                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Next Run</th>
+                                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Conversation</th>
+                                {% if not readonly %}
+                                <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                                    <span class="sr-only">Actions</span>
+                                </th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 bg-white">
+                            {% for task in tasks %}
+                            <tr>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
+                                    <a href="/tasks/{{ task.id }}" class="text-indigo-600 hover:text-indigo-900">
+                                        {{ task.name }}
+                                    </a>
+                                </td>
+                                <td class="px-3 py-4 text-sm text-gray-500">
+                                    <div class="truncate-prompt" title="{{ task.prompt_preview }}">
+                                        {{ task.prompt_preview }}
+                                    </div>
+                                </td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                    <code class="text-xs">{{ task.cron }}</code>
+                                    <br>
+                                    <span class="text-xs text-gray-400">{{ task.timezone }}</span>
+                                </td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm">
+                                    {% if task.enabled %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        Enabled
+                                    </span>
+                                    {% else %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        Disabled
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                    {{ task.last_run_formatted }}
+                                </td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                    {{ task.next_run_formatted }}
+                                </td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                    <span title="{{ task.conversation_id }}">{{ task.conversation_short }}</span>
+                                </td>
+                                {% if not readonly %}
+                                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                    <div class="flex space-x-2">
+                                        <button onclick="runTask('{{ task.id }}', '{{ task.name }}')"
+                                                class="text-indigo-600 hover:text-indigo-900">Run</button>
+                                        <button onclick="toggleTask('{{ task.id }}', {{ 'false' if task.enabled else 'true' }})"
+                                                class="text-yellow-600 hover:text-yellow-900">
+                                            {{ 'Disable' if task.enabled else 'Enable' }}
+                                        </button>
+                                        <button onclick="deleteTask('{{ task.id }}', '{{ task.name }}')"
+                                                class="text-red-600 hover:text-red-900">Delete</button>
+                                    </div>
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    
+                    {% if not tasks %}
+                    <div class="text-center py-8">
+                        <p class="text-gray-500">No tasks found</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    {% if pagination.total_pages > 1 %}
+    <div class="mt-4 flex items-center justify-between">
+        <div class="flex-1 flex justify-between sm:hidden">
+            {% if pagination.page > 1 %}
+            <a href="?page={{ pagination.page - 1 }}&{{ request.query_string.decode() }}"
+               class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                Previous
+            </a>
+            {% endif %}
+            {% if pagination.page < pagination.total_pages %}
+            <a href="?page={{ pagination.page + 1 }}&{{ request.query_string.decode() }}"
+               class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                Next
+            </a>
+            {% endif %}
+        </div>
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div>
+                <p class="text-sm text-gray-700">
+                    Page <span class="font-medium">{{ pagination.page }}</span> of
+                    <span class="font-medium">{{ pagination.total_pages }}</span>
+                </p>
+            </div>
+            <div>
+                <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                    {% if pagination.page > 1 %}
+                    <a href="?page={{ pagination.page - 1 }}&{{ request.query_string.decode() }}"
+                       class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                        Previous
+                    </a>
+                    {% endif %}
+                    {% if pagination.page < pagination.total_pages %}
+                    <a href="?page={{ pagination.page + 1 }}&{{ request.query_string.decode() }}"
+                       class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                        Next
+                    </a>
+                    {% endif %}
+                </nav>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if not readonly %}
+<script>
+const ADMIN_TOKEN = localStorage.getItem('admin_token') || prompt('Enter admin token:');
+if (ADMIN_TOKEN) {
+    localStorage.setItem('admin_token', ADMIN_TOKEN);
+}
+
+async function runTask(taskId, taskName) {
+    if (!confirm(`Run task "${taskName}" now?`)) return;
+    
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/run`, {
+            method: 'POST',
+            headers: {
+                'X-Admin-Token': ADMIN_TOKEN
+            }
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert(data.message);
+        } else {
+            alert('Error: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function toggleTask(taskId, enable) {
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/toggle`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Token': ADMIN_TOKEN
+            },
+            body: JSON.stringify({ enabled: enable })
+        });
+        const data = await response.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function deleteTask(taskId, taskName) {
+    if (!confirm(`Delete task "${taskName}"? This cannot be undone.`)) return;
+    
+    try {
+        const response = await fetch(`/api/tasks/${taskId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-Admin-Token': ADMIN_TOKEN
+            }
+        });
+        const data = await response.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+</script>
+{% endif %}
+
+{% endblock %}

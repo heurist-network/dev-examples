@@ -221,6 +221,7 @@ class AgentManager:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         debug_mode: bool = False,
+        extra_tools: Optional[list] = None,
     ):
         self.model = model
         self.temperature = temperature
@@ -232,6 +233,7 @@ class AgentManager:
         self.api_key = api_key
         self.base_url = base_url
         self.debug_mode = debug_mode
+        self.extra_tools = extra_tools or []
 
         self.mcp_server = MCPServerSse(
             name="MCP SSE Server",
@@ -369,27 +371,67 @@ class AgentManager:
                 )
             agent_name = "Assistant"
 
+        # extra tools will combined with MCP tools into OpenAIAgent instance
+        tools = self.extra_tools if self.extra_tools is not None else []
+        
         agent = OpenAIAgent(
             name=agent_name,
             instructions=instructions,
             mcp_servers=[self.mcp_server],
             model=self._get_model_instance(),
             model_settings=model_settings,
+            tools=tools,
         )
 
         async with self.mcp_server:
             with trace(workflow_name="BlockBeak MCP Agent", trace_id=self.trace_id):
                 try:
-                    # Build multimodal input if an image data URL is present in context
+                    # Build input with conversation history if session is provided
                     input_payload: Any
+                    history_context = ""  # Initialize as empty string
+                    
+                    # Get conversation history from session if available
+                    if session:
+                        try:
+                            # Get recent conversation history
+                            history_items = await session.get_items(limit=10)  # Get last 10 messages
+                            
+                            # Only process if we got valid items
+                            if history_items:
+                                # Build a context string from history
+                                history_lines = []
+                                for item in history_items:
+                                    # Skip the invisible nonce characters
+                                    content = item.get("content", "")
+                                    if isinstance(content, str):
+                                        # Remove the invisible timestamp nonce (\u200B...)
+                                        content = content.split("\u200B")[0]
+                                    
+                                    # Only add non-empty content
+                                    if content:
+                                        role = item.get("role", "user").capitalize()
+                                        # Truncate long messages in history
+                                        if len(content) > 200:
+                                            content = content[:200] + "..."
+                                        history_lines.append(f"{role}: {content}")
+                                
+                                if history_lines:
+                                    history_context = "\n\n[Previous conversation]\n" + "\n".join(history_lines) + "\n\n[Current message]\n"
+                                    logger.info(f"Loaded {len(history_lines)} messages from session history")
+                        except Exception as e:
+                            logger.warning(f"Failed to load session history: {e}")
+                            history_context = ""
+                    
+                    # Check for multimodal input
                     image_url = None
                     logger.debug(f"Processing message: {message}")
                     if isinstance(base_context, dict):
                         image_url = base_context.get("image_data_url")
                         logger.debug(f"Image URL from context: {bool(image_url)}")
 
+                    # Build the input message with optional history context
                     if image_url:
-                        # The Agents Runner expects a top-level 'message' item; content can include text + image
+                        # Multimodal message with image - history not supported yet
                         input_payload = [
                             {
                                 "type": "message",
@@ -402,29 +444,38 @@ class AgentManager:
                         ]
                         logger.info("Constructed multimodal input with text and image")
                     else:
-                        input_payload = message
-                        logger.debug("Using text-only input")
+                        # Text-only message - can include history context
+                        if history_context:
+                            # Prepend history context to the message
+                            input_payload = history_context + message
+                            logger.debug("Added conversation history to input")
+                        else:
+                            # No history, just the message
+                            input_payload = message
+                            logger.debug("Using text-only input without history")
 
-                    # Use session if provided
-                    if session:
-                        # Session handles all history automatically
-                        result = await self._execute_with_retry(
-                            Runner.run,
-                            starting_agent=agent,
-                            input=input_payload,  # Preserve multimodal input when available
-                            context=base_context,
-                            max_turns=max_turns,
-                            session=session  # Pass session to Runner
-                        )
-                    else:
-                        # Fallback to existing behavior
-                        result = await self._execute_with_retry(
-                            Runner.run,
-                            starting_agent=agent,
-                            input=input_payload,
-                            context=base_context,
-                            max_turns=max_turns,
-                        )
+                    # Note: Runner.run doesn't support session parameter directly
+                    # Session management needs to be handled differently
+                    # For now, we'll just run without session to avoid errors
+                    result = await self._execute_with_retry(
+                        Runner.run,
+                        starting_agent=agent,
+                        input=input_payload,
+                        context=base_context,
+                        max_turns=max_turns,
+                    )
+                    
+                    # Save the interaction to session if available
+                    if session and result:
+                        try:
+                            # Save user message and assistant response
+                            await session.add_items([
+                                {"role": "user", "content": message},
+                                {"role": "assistant", "content": result.final_output}
+                            ])
+                            logger.debug("Saved interaction to session")
+                        except Exception as e:
+                            logger.warning(f"Failed to save interaction to session: {e}")
 
                     # Update shared context with any new values from result
                     if hasattr(result, "context") and result.context:

@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}{{ task.name }} - Tasks WebUI{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-0">
+    <div class="sm:flex sm:items-center">
+        <div class="sm:flex-auto">
+            <h2 class="text-2xl font-bold text-gray-900">{{ task.name }}</h2>
+            <p class="mt-2 text-sm text-gray-700">
+                Task ID: <code class="text-xs">{{ task.id }}</code>
+            </p>
+        </div>
+        <div class="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+            <a href="/tasks" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                ← Back to Tasks
+            </a>
+        </div>
+    </div>
+    
+    <!-- Task Details -->
+    <div class="mt-6 bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Task Information</h3>
+        </div>
+        <div class="border-t border-gray-200">
+            <dl>
+                <!-- Status -->
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Status</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        {% if task.enabled %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Enabled
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            Disabled
+                        </span>
+                        {% endif %}
+                    </dd>
+                </div>
+                
+                <!-- Conversation -->
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Conversation ID</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        <code class="text-xs">{{ task.conversation_id }}</code>
+                    </dd>
+                </div>
+                
+                <!-- Schedule -->
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Schedule</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        <code>{{ task.cron }}</code>
+                        <span class="ml-2 text-gray-500">({{ task.timezone }})</span>
+                        {% if default_timezone and default_timezone != task.timezone %}
+                        <br>
+                        <span class="text-xs text-gray-500">Conversation default: {{ default_timezone }}</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                
+                <!-- Last Run -->
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Last Run</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        {% if task.last_run_formatted %}
+                            {{ task.last_run_formatted }}
+                            {% if task.last_run_local %}
+                            <br><span class="text-xs text-gray-500">{{ task.last_run_local }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-gray-400">Never</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                
+                <!-- Next Run -->
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Next Run</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        {% if task.next_run_formatted %}
+                            {{ task.next_run_formatted }}
+                            {% if task.next_run_local %}
+                            <br><span class="text-xs text-gray-500">{{ task.next_run_local }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-gray-400">—</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                
+                <!-- Created By -->
+                {% if task.created_by %}
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Created By</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        {{ task.created_by }}
+                    </dd>
+                </div>
+                {% endif %}
+                
+                <!-- Prompt -->
+                <div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Prompt</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        <pre class="whitespace-pre-wrap bg-gray-100 p-3 rounded text-xs">{{ task.prompt }}</pre>
+                    </dd>
+                </div>
+                
+                <!-- Metadata -->
+                {% if task.meta %}
+                <div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">Metadata</dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        <pre class="whitespace-pre-wrap bg-gray-100 p-3 rounded text-xs">{{ task.meta | tojson(indent=2) }}</pre>
+                    </dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+    
+    <!-- Upcoming Runs -->
+    {% if next_runs %}
+    <div class="mt-6 bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Next 5 Scheduled Runs</h3>
+        </div>
+        <div class="border-t border-gray-200">
+            <ul class="divide-y divide-gray-200">
+                {% for run in next_runs %}
+                <li class="px-4 py-3 sm:px-6">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm text-gray-900">{{ run.utc }}</p>
+                        <p class="text-sm text-gray-500">{{ run.local }}</p>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Actions -->
+    {% if not readonly %}
+    <div class="mt-6 flex space-x-3">
+        <button onclick="runTask('{{ task.id }}')"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+            Run Now
+        </button>
+        <button onclick="toggleTask('{{ task.id }}', {{ 'false' if task.enabled else 'true' }})"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-yellow-700 bg-yellow-100 hover:bg-yellow-200">
+            {{ 'Disable' if task.enabled else 'Enable' }}
+        </button>
+        <button onclick="deleteTask('{{ task.id }}')"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200">
+            Delete Task
+        </button>
+    </div>
+    
+    <script>
+    const ADMIN_TOKEN = localStorage.getItem('admin_token') || prompt('Enter admin token:');
+    if (ADMIN_TOKEN) {
+        localStorage.setItem('admin_token', ADMIN_TOKEN);
+    }
+    
+    async function runTask(taskId) {
+        if (!confirm('Run this task now?')) return;
+        
+        try {
+            const response = await fetch(`/api/tasks/${taskId}/run`, {
+                method: 'POST',
+                headers: {
+                    'X-Admin-Token': ADMIN_TOKEN
+                }
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(data.message);
+            } else {
+                alert('Error: ' + (data.detail || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    }
+    
+    async function toggleTask(taskId, enable) {
+        try {
+            const response = await fetch(`/api/tasks/${taskId}/toggle`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Token': ADMIN_TOKEN
+                },
+                body: JSON.stringify({ enabled: enable })
+            });
+            const data = await response.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + (data.detail || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    }
+    
+    async function deleteTask(taskId) {
+        if (!confirm('Delete this task? This cannot be undone.')) return;
+        
+        try {
+            const response = await fetch(`/api/tasks/${taskId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-Admin-Token': ADMIN_TOKEN
+                }
+            });
+            const data = await response.json();
+            if (data.success) {
+                window.location.href = '/tasks';
+            } else {
+                alert('Error: ' + (data.detail || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    }
+    </script>
+    {% endif %}
+</div>
+{% endblock %}
