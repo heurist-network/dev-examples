@@ -138,6 +138,9 @@ class TaskScheduler:
     
     async def remove_task(self, task_id: str) -> bool:
         """Remove a task from scheduler and store."""
+        # Get task info before removing (for cleanup)
+        task = await store.get(task_id)
+        
         # Remove from scheduler
         try:
             self.scheduler.remove_job(task_id)
@@ -149,7 +152,6 @@ class TaskScheduler:
         removed = await store.remove(task_id)
         
         # Clean up agent manager cache if exists
-        task = await store.get(task_id)
         if task and task.conversation_id in self._agent_managers:
             del self._agent_managers[task.conversation_id]
         
@@ -304,6 +306,11 @@ class TaskScheduler:
         
         # Send notification
         await self.notifier.notify(task, output, trace_url)
+        
+        # Check if task still exists before updating (might have been deleted during execution)
+        if await store.get(task_id) is None:
+            logger.warning(f"Task {task_id} was deleted during execution - skipping metadata update")
+            return
         
         # Update task metadata
         task.last_run_at = datetime.utcnow().isoformat()

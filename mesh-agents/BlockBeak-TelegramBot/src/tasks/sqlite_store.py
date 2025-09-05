@@ -167,8 +167,9 @@ class SQLiteTaskStore:
             await db.commit()
             
             if cursor.rowcount == 0:
-                # Task doesn't exist, add it instead
-                return await self.add(task)
+                # Task doesn't exist, log warning and skip
+                logger.warning(f"Attempted to update non-existent task {task.id} - skipping")
+                return task  # Return task unchanged but don't recreate
             
         logger.info(f"Updated task {task.id} in SQLite store")
         return task
