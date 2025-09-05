@@ -459,7 +459,23 @@ class AgentManager:
                         return response_data
                 except Exception as e:
                     logger.error(f"Error processing message: {str(e)}")
-                    raise AgentError(f"Failed to process message: {str(e)}")
+                    
+                    # Include trace URL in error when debug is enabled
+                    error_details = {"original_error": str(e)}
+                    
+                    # Check if debug mode is enabled for this context
+                    settings = Settings()
+                    should_include_trace = (
+                        chat_id is not None and 
+                        settings.is_debug_enabled_for_chat(chat_id)
+                    ) or self.debug_mode
+                    
+                    if should_include_trace and self.trace_id:
+                        trace_url = self.get_trace_url()
+                        error_details["trace_url"] = trace_url
+                        logger.info(f"Including trace URL in error response: {trace_url}")
+                    
+                    raise AgentError(f"Failed to process message: {str(e)}", details=error_details)
 
     def get_trace_url(self) -> str:
         """Get the URL for the current trace."""
