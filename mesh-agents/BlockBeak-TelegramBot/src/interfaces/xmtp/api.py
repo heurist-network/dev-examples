@@ -282,9 +282,25 @@ async def process_xmtp_message(message: XMTPMessage):
         
     except AgentError as e:
         logger.error(f"Agent error processing message: {str(e)}")
+        
+        # Include trace URL in error detail if available and debug mode is enabled
+        error_detail = f"Agent error: {str(e)}"
+        if DEBUG_MODE and hasattr(e, 'details') and e.details:
+            trace_url = e.details.get('trace_url')
+            if trace_url:
+                # Return error with trace URL in structured format
+                logger.info(f"Including trace URL in error response: {trace_url}")
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "error": str(e),
+                        "trace_url": trace_url
+                    }
+                )
+        
         raise HTTPException(
             status_code=500,
-            detail=f"Agent error: {str(e)}"
+            detail=error_detail
         )
     except Exception as e:
         logger.error(f"Unexpected error processing message: {str(e)}")

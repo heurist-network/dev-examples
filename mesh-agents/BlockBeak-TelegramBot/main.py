@@ -2,6 +2,19 @@
 import sys
 import argparse
 import logging
+
+# Apply robust IPv4-only fix for systems with broken IPv6
+try:
+    import fix_ipv6_robust
+    fix_ipv6_robust.apply_ipv4_fix()
+except ImportError:
+    # Fallback to simple fix if robust version not available
+    try:
+        import fix_ipv6
+        fix_ipv6.apply_ipv4_fix()
+    except ImportError:
+        pass  # No fix available, continue anyway
+
 from src.config.settings import Settings  # Import Settings instead of dotenv
 
 # Set up logging

@@ -4,6 +4,19 @@ import logging
 import asyncio
 import telebot
 import re
+
+# Apply robust IPv4-only fix for systems with broken IPv6
+try:
+    import fix_ipv6_robust
+    fix_ipv6_robust.apply_ipv4_fix()
+except ImportError:
+    # Fallback to simple fix
+    try:
+        import fix_ipv6
+        fix_ipv6.apply_ipv4_fix()
+    except ImportError:
+        pass  # No fix available, continue anyway
+
 from src.core.agent import create_agent_manager
 from src.config.settings import Settings
 from src.core.session.manager import get_session_manager, SessionType
@@ -150,7 +163,8 @@ class TelegramBotHandler:
                         self.process_message(message, is_reply=True)
                     except Exception as e:
                         logger.error(f"Error in reply handler: {str(e)}", exc_info=True)
-                        self.send_error_reply(message, "Sorry, there was an error processing your follow-up question.")
+                        error_msg = self.format_error_message(e, "Sorry, there was an error processing your follow-up question.")
+                        self.send_error_reply(message, error_msg)
                 else:
                     logger.warning(f"User {user_id} tried to reply to another user's conversation")
                     self.bot.reply_to(message, "You can only continue your own conversations.")
@@ -160,7 +174,8 @@ class TelegramBotHandler:
                     self.process_message(message, is_reply=True)
                 except Exception as e:
                     logger.error(f"Error in reply handler: {str(e)}", exc_info=True)
-                    self.send_error_reply(message, "Sorry, there was an error processing your follow-up question.")
+                    error_msg = self.format_error_message(e, "Sorry, there was an error processing your follow-up question.")
+                    self.send_error_reply(message, error_msg)
 
         
         @self.bot.message_handler(commands=['help'])
@@ -233,7 +248,8 @@ class TelegramBotHandler:
                 self.process_message(message)
             except Exception as e:
                 logger.error(f"Error in ask_command handler: {str(e)}", exc_info=True)
-                self.send_error_reply(message, "Sorry, there was an error processing your question. Please try again.")
+                error_msg = self.format_error_message(e, "Sorry, there was an error processing your question. Please try again.")
+                self.send_error_reply(message, error_msg)
     
     async def process_question_async(self, question_text, session, chat_id=None):
         """Process question using session for history management"""
@@ -313,9 +329,31 @@ class TelegramBotHandler:
             
         except Exception as e:
             logger.error(f"Error in process_message: {type(e).__name__}: {str(e)}", exc_info=True)
-            self.send_error_reply(message, f"Sorry, an error occurred: {str(e)[:200]}")
+            
+            # Format error message with trace URL if available
+            error_message = self.format_error_message(e)
+            self.send_error_reply(message, error_message)
         finally:
             loop.close()
+    
+    def format_error_message(self, error: Exception, base_message: str = None) -> str:
+        """Format error message with trace URL if available and debug mode is enabled."""
+        from src.core.agent import AgentError
+        
+        # Use base message or generate from error
+        if base_message:
+            error_msg = base_message
+        else:
+            error_msg = f"Sorry, an error occurred: {str(error)[:200]}"
+        
+        # Check if this is an AgentError with trace_url in details
+        if isinstance(error, AgentError) and hasattr(error, 'details') and error.details:
+            trace_url = error.details.get('trace_url')
+            if trace_url:
+                error_msg += f"\n\n🔍 Debug trace: {trace_url}"
+                logger.info(f"Including trace URL in error message: {trace_url}")
+        
+        return error_msg
     
     def send_error_reply(self, message, error_text):
         try:

@@ -339,7 +339,7 @@ class Settings:
         return SessionConfig(
             max_items=int(os.getenv("SESSION_MAX_ITEMS", "50")),
             window_size=int(os.getenv("SESSION_WINDOW_SIZE", "20")),
-            ttl_hours=int(os.getenv("SESSION_TTL_HOURS", "168")),
+            ttl_hours=int(os.getenv("SESSION_TTL_HOURS", "48")),
             cache_enabled=os.getenv("SESSION_CACHE_ENABLED", "true").lower() == "true",
             cache_ttl_seconds=int(os.getenv("SESSION_CACHE_TTL", "300"))
         )
