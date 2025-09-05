@@ -7,9 +7,9 @@ interface SendMessageRequest {
 }
 
 /**
- * Create an HTTP server to receive messages from Python and send them via XMTP
+ * Create an HTTP bridge for pushing messages from Python (e.g., scheduled task results) to XMTP
  */
-export function createControlServer(client: Client, port: number = 8788) {
+export function createXmtpPushBridge(client: Client, port: number = 8788) {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     // CORS headers for development
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -55,7 +55,7 @@ export function createControlServer(client: Client, port: number = 8788) {
           return;
         }
 
-        console.log(`📨 Control server: Sending message to conversation ${data.conversationId.slice(0, 8)}...`);
+        console.log(`📨 Push bridge: Sending message to conversation ${data.conversationId.slice(0, 8)}...`);
 
         // Get the conversation
         const conversation = await client.conversations.getConversationById(data.conversationId);
@@ -67,13 +67,13 @@ export function createControlServer(client: Client, port: number = 8788) {
 
         // Send the message
         await conversation.send(data.text);
-        console.log(`✅ Control server: Message sent successfully`);
+        console.log(`✅ Push bridge: Message sent successfully`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Message sent' }));
 
       } catch (error) {
-        console.error('❌ Control server error:', error);
+        console.error('❌ Push bridge error:', error);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Failed to send message', details: String(error) }));
       }
@@ -81,8 +81,8 @@ export function createControlServer(client: Client, port: number = 8788) {
   });
 
   server.listen(port, '127.0.0.1', () => {
-    console.log(`🎮 Control server listening on http://127.0.0.1:${port}/xmtp/send`);
-    console.log(`   Use this endpoint to send messages from Python to XMTP conversations`);
+    console.log(`🌉 XMTP Push Bridge listening on http://127.0.0.1:${port}/xmtp/send`);
+    console.log(`   Use this endpoint to push messages from Python (e.g., scheduled tasks) to XMTP conversations`);
   });
 
   return server;

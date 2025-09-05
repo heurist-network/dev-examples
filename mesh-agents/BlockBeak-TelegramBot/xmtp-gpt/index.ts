@@ -24,7 +24,7 @@ import {
   type RemoteAttachment,
 } from "@xmtp/content-type-remote-attachment";
 import { Semaphore } from "./concurrency.js";
-import { createControlServer } from "./server.js";
+import { createXmtpPushBridge } from "./server.js";
 
 // Load environment variables
 const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
@@ -864,13 +864,13 @@ async function main() {
   await logAgentDetails(client as any);
   await client.conversations.sync();
 
-  // Start the control server for receiving messages from Python
+  // Start the push bridge for receiving messages from Python (e.g., scheduled task results)
   const controlPort = Number(process.env.XMTP_CONTROL_PORT || 8788);
-  createControlServer(client as any, controlPort);
+  createXmtpPushBridge(client as any, controlPort);
 
   console.log("\n🚀 Bot configuration:");
   console.log(`  - Agent endpoint: ${agentEndpoint}`);
-  console.log(`  - Control server: http://127.0.0.1:${controlPort}/xmtp/send`);
+  console.log(`  - Push bridge: http://127.0.0.1:${controlPort}/xmtp/send`);
   console.log(`  - Debug mode: ${DEBUG_MODE}`);
   console.log(`  - Mention aliases: ${BOT_MENTION_ALIASES || '(none)'}`);
   console.log(`  - Max concurrency: ${MAX_CONCURRENCY}`);
