@@ -234,6 +234,7 @@ instructions: |
     B) Daily crypto market summary  
     C) Weekly trending tokens report
   - Then ask user to reply to this message with the number of the question they want to ask or the letter of the scheduled task they want to run.
+  - Let user known this feature is only available in Base app chat.
   - Keep the greeting brief and casual, let the questions speak for themselves
   - DO NOT MENTION your tools or technical capabilities
   </conversation_starter>
