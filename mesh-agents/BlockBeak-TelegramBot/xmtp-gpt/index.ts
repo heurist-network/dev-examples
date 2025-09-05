@@ -24,6 +24,7 @@ import {
   type RemoteAttachment,
 } from "@xmtp/content-type-remote-attachment";
 import { Semaphore } from "./concurrency.js";
+import { createControlServer } from "./server.js";
 
 // Load environment variables
 const { WALLET_KEY, ENCRYPTION_KEY, XMTP_ENV, AGENT_ENDPOINT } =
@@ -43,7 +44,7 @@ const optionalEnv = (() => {
 })();
 const BOT_MENTION_ALIASES = optionalEnv.BOT_MENTION_ALIASES || process.env.BOT_MENTION_ALIASES || "";
 
-const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8000/inbox";
+const agentEndpoint = AGENT_ENDPOINT || "http://127.0.0.1:8001/inbox";
 const DEBUG_MODE = process.env.DEBUG_MODE?.toLowerCase() === 'true';
 
 // Per-conversation chaining configuration (Option 2)
@@ -75,8 +76,132 @@ function enqueueByConversation(convoId: string, task: () => Promise<void>) {
   console.log(`📥 Enqueued task for conversation ${convoId.slice(0, 8)}... (${convoTails.size} active conversations)`);
 }
 
-// 简单的睡眠函数
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Wallet resolution cache
+interface WalletInfo {
+  chain: string;
+  chainId: number;
+  primary_address: string | null;
+  addresses: string[];
+  has_address: boolean;
+  sender_inbox_id: string;
+}
+
+interface CachedWalletInfo {
+  walletInfo: WalletInfo;
+  timestamp: number;
+}
+
+const walletCache = new Map<string, CachedWalletInfo>();
+const WALLET_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Resolve wallet address(es) from an inboxId using XMTP SDK
+ * Caches results to avoid repeated lookups
+ */
+async function resolveWalletInfo(client: Client<any>, inboxId: string): Promise<WalletInfo> {
+  // Check cache first
+  const cached = walletCache.get(inboxId);
+  if (cached && Date.now() - cached.timestamp < WALLET_CACHE_TTL) {
+    console.log(`  💾 Using cached wallet info for ${inboxId.slice(0, 8)}...`);
+    return cached.walletInfo;
+  }
+
+  console.log(`  🔍 Resolving wallet for inboxId ${inboxId.slice(0, 8)}...`);
+  
+  try {
+    let inboxState;
+    
+    // Try using preferences API first (preferred method)
+    try {
+      const states = await client.preferences.inboxStateFromInboxIds([inboxId]);
+      inboxState = states?.[0];
+    } catch (e) {
+      console.log(`  ⚠️ preferences.inboxStateFromInboxIds failed, trying static method`);
+      // Fallback to static Client method if preferences API is not available
+      const states = await Client.inboxStateFromInboxIds(
+        [inboxId],
+        XMTP_ENV as XmtpEnv
+      );
+      inboxState = states?.[0];
+    }
+    
+    if (!inboxState || !inboxState.identifiers || inboxState.identifiers.length === 0) {
+      console.log(`  ❌ No identifiers found for inboxId ${inboxId.slice(0, 8)}...`);
+      const walletInfo: WalletInfo = {
+        chain: "base",
+        chainId: 8453,
+        primary_address: null,
+        addresses: [],
+        has_address: false,
+        sender_inbox_id: inboxId
+      };
+      
+      // Cache the negative result too
+      walletCache.set(inboxId, { walletInfo, timestamp: Date.now() });
+      return walletInfo;
+    }
+    
+    // Extract all addresses
+    const addresses = inboxState.identifiers.map((id: any) => id.identifier);
+    
+    // Choose primary address: prefer EOA (simple 0x address) over SCW (smart contract wallet)
+    // SCW addresses often have additional markers or are longer
+    let primaryAddress = addresses[0]; // Default to first
+    
+    // Simple heuristic: prefer shorter addresses (likely EOA) over longer ones (likely SCW)
+    // or addresses without special markers
+    for (const addr of addresses) {
+      // If we find a standard 42-char address (0x + 40 hex chars), prefer it
+      if (addr.length === 42 && addr.startsWith('0x')) {
+        primaryAddress = addr;
+        break;
+      }
+    }
+    
+    console.log(`  ✅ Resolved wallet: ${primaryAddress} (${addresses.length} total addresses)`);
+    
+    const walletInfo: WalletInfo = {
+      chain: "base",
+      chainId: 8453,
+      primary_address: primaryAddress,
+      addresses: addresses,
+      has_address: true,
+      sender_inbox_id: inboxId
+    };
+    
+    // Cache the result
+    walletCache.set(inboxId, { walletInfo, timestamp: Date.now() });
+    return walletInfo;
+    
+  } catch (error) {
+    console.error(`  ❌ Error resolving wallet for ${inboxId.slice(0, 8)}...:`, error);
+    
+    // Return empty wallet info on error
+    const walletInfo: WalletInfo = {
+      chain: "base",
+      chainId: 8453,
+      primary_address: null,
+      addresses: [],
+      has_address: false,
+      sender_inbox_id: inboxId
+    };
+    
+    // Don't cache errors - allow retry on next message
+    return walletInfo;
+  }
+}
+
+// Clean up expired cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of walletCache.entries()) {
+    if (now - value.timestamp > WALLET_CACHE_TTL) {
+      walletCache.delete(key);
+    }
+  }
+}, WALLET_CACHE_TTL); // Run cleanup every 10 minutes
 
 // 在启动时构建所有mention模式 - 不要在运行时重复计算
 let botMentionPatterns: Set<string> = new Set();
@@ -133,8 +258,31 @@ async function getReplyContext(conversation: any, messageId: string): Promise<st
   try {
     const messages = await conversation.messages();
     const original = messages.find((m: any) => m.id === messageId);
-    return original?.content || null;
+    
+    if (!original) return null;
+    
+    // Extract text content from the message
+    // Handle different content types
+    const content = original.content;
+    
+    // If content is a string, return it directly
+    if (typeof content === 'string') {
+      return content;
+    }
+    
+    // If content is a Reply object, extract its content
+    if (content && typeof content === 'object') {
+      // For Reply type messages
+      if (content.content && typeof content.content === 'string') {
+        return content.content;
+      }
+      // For other object types, try to stringify
+      return JSON.stringify(content);
+    }
+    
+    return null;
   } catch (e) {
+    console.warn(`  ⚠️ Failed to get reply context: ${e}`);
     return null;
   }
 }
@@ -202,7 +350,7 @@ setInterval(() => {
 
 // send message to openai agent to process
 // All message sending (reactions, waiting messages, replies) happens in the per-conversation task
-async function sendToAgent(sender: string, text: string, imageData?: any, replyContext?: string, messageId?: string, conversationId?: string) {
+async function sendToAgent(sender: string, text: string, imageData?: any, replyContext?: string, messageId?: string, conversationId?: string, walletInfo?: WalletInfo) {
   console.log(`\n🤖 Calling agent:`);
   console.log(`  - Text: "${text.slice(0, 100)}..."`);
   console.log(`  - Has image: ${!!imageData}`);
@@ -224,9 +372,26 @@ async function sendToAgent(sender: string, text: string, imageData?: any, replyC
       payload.replyContext = replyContext;
     }
     
+    // Build meta object with wallet info and/or image data
+    const meta: any = {};
+    
+    if (walletInfo) {
+      meta.wallet = walletInfo;
+      console.log(`  - Adding wallet to meta: ${walletInfo.primary_address} (has_address: ${walletInfo.has_address})`);
+    }
+    
     if (imageData) {
-      payload.meta = imageData;
-      
+      // Merge image data into meta
+      Object.assign(meta, imageData);
+    }
+    
+    // Only add meta to payload if it has content
+    if (Object.keys(meta).length > 0) {
+      payload.meta = meta;
+      console.log(`  - Meta object keys: ${Object.keys(meta).join(', ')}`);
+    }
+    
+    if (imageData) {
       // check image data size
       const imageSizeKB = (JSON.stringify(imageData).length / 1024);
       console.log(`  - Image data size: ${imageSizeKB.toFixed(1)} KB`);
@@ -340,6 +505,9 @@ async function processMessages(client: Client<any>) {
     }
     
     console.log(`\n📨 Incoming message from ${message.senderInboxId.slice(0,8)}...`);
+    console.log(`  snederInboxId: ${message.senderInboxId}`);
+    console.log(`  conversationId: ${message.conversationId}`);
+    console.log(`  contentType: ${message.contentType?.typeId}`);
     
     // skip system messages like read receipts, reactions, etc.
     const systemMessageTypes = ['readReceipt', 'reaction', 'groupUpdated', 'groupMembershipChange'];
@@ -380,6 +548,9 @@ async function processMessages(client: Client<any>) {
     }
     
     console.log(`  Type: ${isText ? 'TEXT' : isReply ? 'REPLY' : isImage ? 'IMAGE' : 'UNKNOWN'}, ${isDm ? 'DM' : isGroup ? 'Group' : 'Unknown'}`);
+    
+    // Resolve wallet info from senderInboxId
+    const walletInfo = await resolveWalletInfo(client, message.senderInboxId);
     
     // full senderInboxId for attribution and rate limiting
     const senderAddress = message.senderInboxId;
@@ -458,8 +629,8 @@ async function processMessages(client: Client<any>) {
               console.warn(`  ⚠️ Mode detection error:`, modeError);
             }
             
-            // Call the agent
-            const result = await sendToAgent(senderAddress, cleanedText, recent.imageData, replyContext || undefined, message.id, message.conversationId);
+            // Call the agent with wallet info
+            const result = await sendToAgent(senderAddress, cleanedText, recent.imageData, replyContext || undefined, message.id, message.conversationId, walletInfo);
             
             // Send final reply
             if (message.id) {
@@ -531,8 +702,8 @@ async function processMessages(client: Client<any>) {
               console.warn(`  ⚠️ Mode detection error:`, modeError);
             }
             
-            // Call the agent
-            const result = await sendToAgent(senderAddress, cleanedText, undefined, replyContext || undefined, message.id, message.conversationId);
+            // Call the agent with wallet info
+            const result = await sendToAgent(senderAddress, cleanedText, undefined, replyContext || undefined, message.id, message.conversationId, walletInfo);
             
             // Send final reply
             if (message.id) {
@@ -605,8 +776,8 @@ async function processMessages(client: Client<any>) {
                   }
                 }
                 
-                // Call the agent
-                const result = await sendToAgent(senderAddress, "analyze this image", imageData, undefined, message.id, message.conversationId);
+                // Call the agent with wallet info
+                const result = await sendToAgent(senderAddress, "analyze this image", imageData, undefined, message.id, message.conversationId, walletInfo);
                 
                 // Send final reply
                 if (message.id) {
@@ -693,8 +864,13 @@ async function main() {
   await logAgentDetails(client as any);
   await client.conversations.sync();
 
+  // Start the control server for receiving messages from Python
+  const controlPort = Number(process.env.XMTP_CONTROL_PORT || 8788);
+  createControlServer(client as any, controlPort);
+
   console.log("\n🚀 Bot configuration:");
   console.log(`  - Agent endpoint: ${agentEndpoint}`);
+  console.log(`  - Control server: http://127.0.0.1:${controlPort}/xmtp/send`);
   console.log(`  - Debug mode: ${DEBUG_MODE}`);
   console.log(`  - Mention aliases: ${BOT_MENTION_ALIASES || '(none)'}`);
   console.log(`  - Max concurrency: ${MAX_CONCURRENCY}`);

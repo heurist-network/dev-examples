@@ -429,30 +429,45 @@ class AgentManager:
                         image_url = base_context.get("image_data_url")
                         logger.debug(f"Image URL from context: {bool(image_url)}")
 
-                    # Build the input message with optional history context
+                    # Build wallet context if available
+                    wallet_context = ""
+                    if isinstance(base_context, dict) and "wallet" in base_context:
+                        wallet_info = base_context["wallet"]
+                        if wallet_info.get("has_address") and wallet_info.get("primary_address"):
+                            wallet_context = f"[User's wallet address on Base chain: {wallet_info['primary_address']}]\n\n"
+                            logger.info(f"Added wallet context: {wallet_info['primary_address']}")
+                        else:
+                            wallet_context = "[No wallet address associated with this user]\n\n"
+                            logger.info("Added no-wallet context")
+                    
+                    # Build the input message with optional history and wallet context
                     if image_url:
-                        # Multimodal message with image - history not supported yet
+                        # Multimodal message with image - add wallet context to text
+                        message_with_context = wallet_context + message if wallet_context else message
                         input_payload = [
                             {
                                 "type": "message",
                                 "role": "user",
                                 "content": [
-                                    {"type": "input_text", "text": message},
+                                    {"type": "input_text", "text": message_with_context},
                                     {"type": "input_image", "image_url": image_url},
                                 ],
                             }
                         ]
                         logger.info("Constructed multimodal input with text and image")
                     else:
-                        # Text-only message - can include history context
+                        # Text-only message - can include history and wallet context
+                        full_message = message
+                        if wallet_context:
+                            full_message = wallet_context + full_message
                         if history_context:
                             # Prepend history context to the message
-                            input_payload = history_context + message
-                            logger.debug("Added conversation history to input")
+                            input_payload = history_context + full_message
+                            logger.debug("Added conversation history and wallet context to input")
                         else:
-                            # No history, just the message
-                            input_payload = message
-                            logger.debug("Using text-only input without history")
+                            # No history, just wallet context and message
+                            input_payload = full_message
+                            logger.debug("Using text-only input with wallet context")
 
                     # Note: Runner.run doesn't support session parameter directly
                     # Session management needs to be handled differently

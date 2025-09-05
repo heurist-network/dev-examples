@@ -11,6 +11,7 @@
     "start": "tsx index.ts"
   },
   "dependencies": {
+    "@xmtp/content-type-primitives": "^2.0.2",
     "@xmtp/content-type-reaction": "^2.0.2",
     "@xmtp/content-type-remote-attachment": "^2.0.2",
     "@xmtp/content-type-reply": "^2.0.2",

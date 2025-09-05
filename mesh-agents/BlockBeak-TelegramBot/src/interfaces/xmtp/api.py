@@ -213,6 +213,10 @@ async def process_xmtp_message(message: XMTPMessage):
             "conversation_id": message.conversationId,
             "sender": message.sender,
         }
+        
+        # Debug log for incoming meta
+        if message.meta:
+            logger.info(f"Received meta with keys: {list(message.meta.keys())}")
     
         # Add reply context to metadata if available
         if message.replyContext:
@@ -223,6 +227,13 @@ async def process_xmtp_message(message: XMTPMessage):
         if message.meta:
             logger.info(f"Context update keys: {list(message.meta.keys())}")
             context_update.update(message.meta)
+            # Log if wallet info is present
+            if "wallet" in message.meta:
+                wallet_info = message.meta["wallet"]
+                if wallet_info.get("has_address"):
+                    logger.info(f"Wallet context: {wallet_info.get('primary_address', 'unknown')} on {wallet_info.get('chain', 'unknown')} chain")
+                else:
+                    logger.info("Wallet context: No associated address found")
             # Log if image data is present (without logging the actual data URL for brevity)
             if "image_data_url" in message.meta:
                 logger.info(f"Image data received - filename: {message.meta.get('filename', 'unknown')}, mime_type: {message.meta.get('mime_type', 'unknown')}")
