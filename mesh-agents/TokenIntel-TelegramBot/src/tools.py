@@ -83,7 +83,8 @@ def post(func):
         }
 
         print(f"\n🔧 Preparing POST call for tool: {func.__name__}")
-        print(f"📤 Request Payload:\n{json}\n")
+        print(f"📤 Agent: {self.__class__.__name__}")
+        print(f"🎯 Tool arguments: {str(payload)[:200]}...")
 
         return await self.request(method="POST", json=json)
 
@@ -96,6 +97,10 @@ class HeuAgentApiWrapper:
     heu_key = os.environ.get("HEURIST_KEY")
     timeout = 10
 
+    def __init__(self):
+        if not self.heu_key:
+            raise ValueError("HEURIST_KEY is required in environment variables")
+
     async def request(
         self,
         method: Literal["GET", "POST"],
@@ -105,37 +110,63 @@ class HeuAgentApiWrapper:
     ) -> Dict[str, Any]:
         headers = {"Content-Type": "application/json"}
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
+                print(f"🌐 Making {method} request to Heurist API...")
+
                 response = await client.request(
                     method=method,
                     url=self.base_url,
                     params=params,
                     json=json,
                     headers=headers,
-                    timeout=self.timeout,
                     **kwargs,
                 )
 
-                print(f"Response Status Code: {response.status_code}")
-                print(f"📨 Response Content:\n{response.text}\n")
+                print(f"📊 Response Status: {response.status_code}")
 
                 if response.status_code == 200:
-                    return response.json()
+                    result = response.json()
+                    print(f"✅ Request successful - received {len(str(result))} chars")
+                    return result
                 else:
+                    error_text = response.text[:500]  # Limit error text length
+                    print(f"❌ API Error: {response.status_code}")
+                    print(f"📝 Error details: {error_text}")
                     raise HeuristAPIError(
-                        message="Something went wrong with the Heurist API",
+                        message=f"Heurist API error: {response.status_code}",
                         status_code=response.status_code,
-                        response=response.text,
+                        response=error_text,
                     )
 
+            except httpx.TimeoutException:
+                print(f"⏰ Request timeout after {self.timeout}s")
+                raise HeuristAPIError(
+                    message=f"Request timeout after {self.timeout} seconds",
+                    status_code=408,
+                )
+            except httpx.RequestError as e:
+                print(f"🌐 Network error: {str(e)}")
+                raise HeuristAPIError(
+                    message=f"Network error: {str(e)}",
+                    status_code=500,
+                )
             except Exception as e:
-                print(f"Unknown error occurred: {str(e)}\n")
-                raise
+                print(f"💥 Unexpected error: {str(e)}")
+                raise HeuristAPIError(
+                    message=f"Unexpected error: {str(e)}",
+                    status_code=500,
+                )
 
 
 # ---------- Agent Classes ----------
 class ExaSearchAgent(HeuAgentApiWrapper):
+    """Agent for web search and question answering"""
+
+    def __init__(self):
+        super().__init__()
+        self.timeout = 30
+
     @post
     async def exa_web_search(self, args: WebSearch):
         return args
@@ -146,7 +177,11 @@ class ExaSearchAgent(HeuAgentApiWrapper):
 
 
 class ElfaTwitterIntelligenceAgent(HeuAgentApiWrapper):
-    timeout = 30
+    """Agent for Twitter intelligence and social media analysis"""
+
+    def __init__(self):
+        super().__init__()
+        self.timeout = 30
 
     @post
     async def search_mentions(self, args: SearchMentions):
@@ -162,7 +197,11 @@ class ElfaTwitterIntelligenceAgent(HeuAgentApiWrapper):
 
 
 class FirecrawlSearchAgent(HeuAgentApiWrapper):
-    timeout = 200
+    """Agent for web crawling and data extraction"""
+
+    def __init__(self):
+        super().__init__()
+        self.timeout = 200  # Web crawling can take longer
 
     @post
     async def firecrawl_web_search(self, args: WebSearch):
@@ -174,7 +213,11 @@ class FirecrawlSearchAgent(HeuAgentApiWrapper):
 
 
 class MetaSleuthSolTokenWalletClusterAgent(HeuAgentApiWrapper):
-    timeout = 100
+    """Agent for analyzing Solana token wallet clusters"""
+
+    def __init__(self):
+        super().__init__()
+        self.timeout = 100
 
     @post
     async def fetch_token_clusters(self, args: SearchTokenAddressClusters):
@@ -182,7 +225,11 @@ class MetaSleuthSolTokenWalletClusterAgent(HeuAgentApiWrapper):
 
 
 class SolWalletAgent(HeuAgentApiWrapper):
-    timeout = 120
+    """Agent for Solana wallet analysis and holder insights"""
+
+    def __init__(self):
+        super().__init__()
+        self.timeout = 120
 
     @post
     async def analyze_common_holdings_of_top_holders(self, args: ScanTokenAddress):
@@ -190,6 +237,12 @@ class SolWalletAgent(HeuAgentApiWrapper):
 
 
 class TwitterInsightAgent(HeuAgentApiWrapper):
+    """Agent for advanced Twitter insights and analytics"""
+
+    def __init__(self):
+        super().__init__()
+        self.timeout = 60
+
     @post
     async def get_smart_followers_history(self, args: SmartFollowers):
         return args
@@ -197,3 +250,49 @@ class TwitterInsightAgent(HeuAgentApiWrapper):
     @post
     async def get_smart_mentions_feed(self, args: SmartMentions):
         return {"username": args["username"], "limit": str(args["limit"])}
+
+
+# ---------- Utility Functions ----------
+def validate_tools_configuration():
+    """Validate that all required environment variables are set"""
+    heurist_key = os.environ.get("HEURIST_KEY")
+
+    if not heurist_key:
+        raise ValueError(
+            "HEURIST_KEY is required for intelligence tools. "
+            "Get your API key from https://heurist.xyz"
+        )
+
+    print("✅ Tools configuration validated")
+    return True
+
+
+def get_available_tools():
+    """Get list of available intelligence tools"""
+    return [
+        "ElfaTwitterIntelligenceAgent - Twitter sentiment and social media analysis",
+        "ExaSearchAgent - Web search and question answering",
+        "FirecrawlSearchAgent - Website crawling and data extraction",
+        "MetaSleuthSolTokenWalletClusterAgent - Solana token wallet cluster analysis",
+        "SolWalletAgent - Solana wallet analysis and holder insights",
+        "TwitterInsightAgent - Advanced Twitter analytics and insights",
+    ]
+
+
+# Initialize and validate tools on import
+if __name__ == "__main__":
+    try:
+        validate_tools_configuration()
+        tools = get_available_tools()
+        print("\n🛠️  Available Intelligence Tools:")
+        for i, tool in enumerate(tools, 1):
+            print(f"{i}. {tool}")
+    except Exception as e:
+        print(f"❌ Tools validation failed: {e}")
+else:
+    # Validate when imported
+    try:
+        validate_tools_configuration()
+    except Exception as e:
+        print(f"⚠️  Tools configuration warning: {e}")
+        print("Some intelligence features may not work properly")
